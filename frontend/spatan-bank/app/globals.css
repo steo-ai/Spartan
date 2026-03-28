@@ -1,0 +1,473 @@
+@import 'tailwindcss';
+@import 'tw-animate-css';
+
+@custom-variant dark (&:is(.dark *));
+
+:root {
+  /* Glass Opacity Levels - Customizable */
+  --glass-opacity: 0.08;
+  --glass-blur: 20px;
+  --glass-border-opacity: 0.25;
+  --glass-shine-opacity: 0.1;
+  
+  /* Light mode - Enhanced contrast and readability */
+  --background: oklch(0.99 0.001 260);
+  --foreground: oklch(0.15 0.01 260);
+  --card: oklch(0.98 0.001 260);
+  --card-foreground: oklch(0.15 0.01 260);
+  --popover: oklch(0.99 0.001 260);
+  --popover-foreground: oklch(0.15 0.01 260);
+  --primary: oklch(0.45 0.25 260);
+  --primary-foreground: oklch(0.98 0.001 260);
+  --secondary: oklch(0.92 0.01 260);
+  --secondary-foreground: oklch(0.2 0.01 260);
+  --muted: oklch(0.9 0.01 260);
+  --muted-foreground: oklch(0.5 0.05 260);
+  --accent: oklch(0.55 0.2 200);
+  --accent-foreground: oklch(0.98 0.001 260);
+  --destructive: oklch(0.55 0.28 25);
+  --destructive-foreground: oklch(0.98 0.001 260);
+  --border: oklch(0.88 0.01 260);
+  --input: oklch(0.95 0.01 260);
+  --ring: oklch(0.45 0.25 260);
+  --radius: 1rem;
+  
+  /* Spartan Bank Colors - Light Mode */
+  --spartan-cyan: oklch(0.5 0.2 200);
+  --spartan-purple: oklch(0.45 0.25 280);
+  --spartan-navy: oklch(0.2 0.08 260);
+  --spartan-gold: oklch(0.65 0.2 85);
+  --spartan-success: oklch(0.55 0.2 145);
+  --spartan-warning: oklch(0.65 0.2 85);
+  --spartan-error: oklch(0.55 0.28 25);
+  
+  /* Chart colors - Light Mode */
+  --chart-1: oklch(0.5 0.2 200);
+  --chart-2: oklch(0.45 0.25 280);
+  --chart-3: oklch(0.65 0.2 85);
+  --chart-4: oklch(0.55 0.2 145);
+  --chart-5: oklch(0.55 0.28 25);
+  
+  /* Sidebar - Light Mode */
+  --sidebar: oklch(0.98 0.001 260);
+  --sidebar-foreground: oklch(0.15 0.01 260);
+  --sidebar-primary: oklch(0.45 0.25 260);
+  --sidebar-primary-foreground: oklch(0.98 0.001 260);
+  --sidebar-accent: oklch(0.92 0.01 260);
+  --sidebar-accent-foreground: oklch(0.15 0.01 260);
+  --sidebar-border: oklch(0.88 0.01 260);
+  --sidebar-ring: oklch(0.45 0.25 260);
+}
+
+.dark {
+  --background: oklch(0.12 0.02 260);
+  --foreground: oklch(0.95 0.01 260);
+  --card: oklch(0.15 0.02 260);
+  --card-foreground: oklch(0.95 0.01 260);
+  --popover: oklch(0.15 0.02 260);
+  --popover-foreground: oklch(0.95 0.01 260);
+  --primary: oklch(0.75 0.15 200);
+  --primary-foreground: oklch(0.12 0.02 260);
+  --secondary: oklch(0.25 0.03 260);
+  --secondary-foreground: oklch(0.95 0.01 260);
+  --muted: oklch(0.25 0.03 260);
+  --muted-foreground: oklch(0.65 0.02 260);
+  --accent: oklch(0.6 0.25 280);
+  --accent-foreground: oklch(0.95 0.01 260);
+  --destructive: oklch(0.55 0.22 25);
+  --destructive-foreground: oklch(0.95 0.01 260);
+  --border: oklch(0.3 0.03 260);
+  --input: oklch(0.25 0.03 260);
+  --ring: oklch(0.75 0.15 200);
+  
+  /* Spartan Bank Colors - Dark */
+  --spartan-cyan: oklch(0.75 0.15 200);
+  --spartan-purple: oklch(0.65 0.25 280);
+  --spartan-navy: oklch(0.12 0.02 260);
+  --spartan-gold: oklch(0.85 0.15 85);
+  --spartan-success: oklch(0.7 0.2 145);
+  --spartan-warning: oklch(0.85 0.15 85);
+  --spartan-error: oklch(0.6 0.25 25);
+
+  /* Chart colors for dark mode */
+  --chart-1: oklch(0.75 0.15 200);
+  --chart-2: oklch(0.65 0.25 280);
+  --chart-3: oklch(0.85 0.15 85);
+  --chart-4: oklch(0.7 0.2 145);
+  --chart-5: oklch(0.6 0.25 25);
+  
+  /* Sidebar Dark */
+  --sidebar: oklch(0.205 0 0);
+  --sidebar-foreground: oklch(0.985 0 0);
+  --sidebar-primary: oklch(0.488 0.243 264.376);
+  --sidebar-primary-foreground: oklch(0.985 0 0);
+  --sidebar-accent: oklch(0.269 0 0);
+  --sidebar-accent-foreground: oklch(0.985 0 0);
+  --sidebar-border: oklch(0.269 0 0);
+  --sidebar-ring: oklch(0.439 0 0);
+}
+
+/* Glass Style Presets */
+[data-glass="clear"] {
+  --glass-opacity: 0.05;
+  --glass-blur: 24px;
+  --glass-border-opacity: 0.15;
+  --glass-shine-opacity: 0.08;
+}
+
+[data-glass="translucent"] {
+  --glass-opacity: 0.15;
+  --glass-blur: 20px;
+  --glass-border-opacity: 0.25;
+  --glass-shine-opacity: 0.12;
+}
+
+[data-glass="semi-opaque"] {
+  --glass-opacity: 0.4;
+  --glass-blur: 16px;
+  --glass-border-opacity: 0.35;
+  --glass-shine-opacity: 0.15;
+}
+
+[data-glass="opaque"] {
+  --glass-opacity: 0.85;
+  --glass-blur: 8px;
+  --glass-border-opacity: 0.5;
+  --glass-shine-opacity: 0.2;
+}
+
+@theme inline {
+  --font-sans: 'Geist', 'Geist Fallback', system-ui, sans-serif;
+  --font-mono: 'Geist Mono', 'Geist Mono Fallback', monospace;
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --color-chart-1: var(--chart-1);
+  --color-chart-2: var(--chart-2);
+  --color-chart-3: var(--chart-3);
+  --color-chart-4: var(--chart-4);
+  --color-chart-5: var(--chart-5);
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+  
+  /* Spartan Bank custom colors */
+  --color-spartan-cyan: var(--spartan-cyan);
+  --color-spartan-purple: var(--spartan-purple);
+  --color-spartan-navy: var(--spartan-navy);
+  --color-spartan-gold: var(--spartan-gold);
+  --color-spartan-success: var(--spartan-success);
+  --color-spartan-warning: var(--spartan-warning);
+  --color-spartan-error: var(--spartan-error);
+  
+  --color-sidebar: var(--sidebar);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-ring: var(--sidebar-ring);
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+  body {
+    @apply bg-background text-foreground font-sans;
+  }
+  html {
+    scroll-behavior: smooth;
+  }
+}
+
+/* Liquid Glass Base Styles */
+.liquid-glass {
+  position: relative;
+  background: linear-gradient(
+    135deg,
+    rgba(100, 140, 200, calc(var(--glass-opacity) * 0.4)) 0%,
+    rgba(80, 120, 180, calc(var(--glass-opacity) * 0.2)) 50%,
+    rgba(60, 100, 160, calc(var(--glass-opacity) * 0.1)) 100%
+  );
+  backdrop-filter: blur(var(--glass-blur));
+  -webkit-backdrop-filter: blur(var(--glass-blur));
+  border: 1px solid rgba(100, 140, 200, var(--glass-border-opacity));
+  border-radius: var(--radius);
+  overflow: hidden;
+}
+
+.dark .liquid-glass {
+  background: linear-gradient(
+    135deg,
+    rgba(100, 150, 200, var(--glass-opacity)) 0%,
+    rgba(80, 100, 180, calc(var(--glass-opacity) * 0.7)) 50%,
+    rgba(60, 80, 150, calc(var(--glass-opacity) * 0.5)) 100%
+  );
+  border: 1px solid rgba(120, 180, 255, var(--glass-border-opacity));
+}
+
+/* Liquid Glass Shine Effect */
+.liquid-glass::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 50%;
+  background: linear-gradient(
+    to bottom,
+    rgba(150, 190, 255, var(--glass-shine-opacity)) 0%,
+    transparent 100%
+  );
+  pointer-events: none;
+  border-radius: var(--radius) var(--radius) 0 0;
+}
+
+/* Liquid Glass Glow Effect */
+.liquid-glass-glow {
+  box-shadow: 
+    0 8px 32px rgba(100, 140, 200, 0.12),
+    inset 0 1px 0 rgba(150, 190, 255, 0.15),
+    inset 0 -1px 0 rgba(0, 0, 0, 0.03);
+}
+
+.dark .liquid-glass-glow {
+  box-shadow: 
+    0 8px 32px rgba(100, 180, 255, 0.2),
+    0 0 60px rgba(100, 150, 255, 0.1),
+    inset 0 1px 0 rgba(255, 255, 255, 0.15),
+    inset 0 -1px 0 rgba(0, 0, 0, 0.2);
+}
+
+/* Liquid Glass with Neon Border */
+.liquid-glass-neon {
+  border: 1px solid transparent;
+  background: 
+    linear-gradient(var(--background), var(--background)) padding-box,
+    linear-gradient(135deg, 
+      oklch(0.75 0.15 200) 0%, 
+      oklch(0.65 0.25 280) 50%, 
+      oklch(0.75 0.15 200) 100%
+    ) border-box;
+}
+
+/* Liquid Ripple Effect on Hover */
+.liquid-ripple {
+  position: relative;
+  overflow: hidden;
+}
+
+.liquid-ripple::after {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 0;
+  height: 0;
+  background: radial-gradient(circle, rgba(255, 255, 255, 0.3) 0%, transparent 70%);
+  border-radius: 50%;
+  transform: translate(-50%, -50%);
+  transition: width 0.6s ease, height 0.6s ease, opacity 0.6s ease;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.liquid-ripple:hover::after {
+  width: 300%;
+  height: 300%;
+  opacity: 1;
+}
+
+/* Card Gradient Overlays */
+.card-gradient-cyan {
+  background: linear-gradient(
+    135deg,
+    oklch(0.75 0.15 200 / 0.3) 0%,
+    oklch(0.65 0.25 280 / 0.2) 100%
+  );
+}
+
+.card-gradient-purple {
+  background: linear-gradient(
+    135deg,
+    oklch(0.65 0.25 280 / 0.3) 0%,
+    oklch(0.55 0.2 260 / 0.2) 100%
+  );
+}
+
+.card-gradient-gold {
+  background: linear-gradient(
+    135deg,
+    oklch(0.85 0.15 85 / 0.3) 0%,
+    oklch(0.75 0.15 60 / 0.2) 100%
+  );
+}
+
+/* Smooth Animations */
+@keyframes float {
+  0%, 100% { transform: translateY(0px); }
+  50% { transform: translateY(-10px); }
+}
+
+@keyframes pulse-glow {
+  0%, 100% { 
+    box-shadow: 0 0 20px rgba(100, 180, 255, 0.3);
+  }
+  50% { 
+    box-shadow: 0 0 40px rgba(100, 180, 255, 0.5);
+  }
+}
+
+@keyframes shimmer {
+  0% { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
+}
+
+.animate-float {
+  animation: float 6s ease-in-out infinite;
+}
+
+.animate-pulse-glow {
+  animation: pulse-glow 3s ease-in-out infinite;
+}
+
+.animate-shimmer {
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    rgba(255, 255, 255, 0.2) 50%,
+    transparent 100%
+  );
+  background-size: 200% 100%;
+  animation: shimmer 2s infinite;
+}
+
+/* Custom Scrollbar */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: oklch(0.5 0.1 260 / 0.25);
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: oklch(0.5 0.1 260 / 0.4);
+}
+
+.dark ::-webkit-scrollbar-thumb {
+  background: oklch(0.5 0.1 260 / 0.4);
+}
+
+.dark ::-webkit-scrollbar-thumb:hover {
+  background: oklch(0.5 0.1 260 / 0.6);
+}
+
+/* Hide scrollbar for mobile */
+@media (max-width: 768px) {
+  ::-webkit-scrollbar {
+    display: none;
+  }
+}
+
+/* Number input hide spinners */
+input[type="number"]::-webkit-inner-spin-button,
+input[type="number"]::-webkit-outer-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+
+input[type="number"] {
+  -moz-appearance: textfield;
+}
+
+/* Responsive Design Enhancements */
+@media (max-width: 768px) {
+  body {
+    font-size: 14px;
+  }
+  
+  .hide-mobile {
+    display: none !important;
+  }
+  
+  /* Ensure proper spacing on mobile */
+  main {
+    padding-bottom: 80px;
+  }
+}
+
+@media (min-width: 769px) {
+  .hide-desktop {
+    display: none !important;
+  }
+  
+  /* Proper navbar positioning on desktop */
+  header {
+    position: sticky;
+    top: 0;
+    z-index: 40;
+  }
+  
+  /* Ensure main content aligns properly with sidebar */
+  main {
+    margin-left: 0;
+  }
+}
+
+/* Extra large screens */
+@media (min-width: 1280px) {
+  .container {
+    max-width: 1280px;
+  }
+}
+@keyframes pulse-slow {
+  0%, 100% { opacity: 0.15; }
+  50% { opacity: 0.4; }
+}
+.animate-pulse-slow {
+  animation: pulse-slow 4s ease-in-out infinite;
+}
+
+.text-shadow-glow {
+  text-shadow: 0 0 20px rgba(34, 211, 238, 0.7);
+}
+.number-fit {
+  font-size: clamp(1.35rem, 5.5vw, 1.875rem);
+  line-height: 1.1;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Extra control on very small phones */
+@media (max-width: 380px) {
+  .number-fit {
+    font-size: clamp(1.25rem, 6vw, 1.75rem);
+  }
+}
