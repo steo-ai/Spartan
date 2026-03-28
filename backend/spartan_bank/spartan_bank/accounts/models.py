@@ -1,0 +1,533 @@
+from django.db import models
+from django.contrib.auth.models import User
+from django.db import transaction as db_transaction
+from django.utils import timezone
+from django.db.transaction import atomic
+from django.db.models import Sum
+import uuid
+from cryptography.fernet import Fernet, InvalidToken
+from decimal import Decimal, InvalidOperation
+from datetime import timedelta
+from django.conf import settings
+from dateutil.relativedelta import relativedelta
+from django.apps import apps  # ← Added for lazy import
+
+
+# ────────────────────────────────────────────────
+# Encryption setup
+# ────────────────────────────────────────────────
+FERNET = Fernet(settings.ENCRYPTION_KEY)
+
+
+class UserProfile(models.Model):
+    """Extended profile with KYC, security, MFA settings and daily transaction limits"""
+    user = models.OneToOneField(User, on_delete=models.CASCADE)
+    phone_number = models.CharField(max_length=15, blank=True)
+    address = models.TextField(blank=True)
+    date_of_birth = models.DateField(null=True, blank=True)
+    national_id = models.CharField(max_length=50, blank=True)
+    kyc_verified = models.BooleanField(default=False)
+    bio = models.TextField(blank=True)
+    security_question = models.CharField(max_length=255, blank=True)
+    security_answer_hash = models.CharField(max_length=255, blank=True)
+    mfa_enabled = models.BooleanField(default=True)
+    otp_code = models.CharField(max_length=6, blank=True, null=True)
+    otp_created_at = models.DateTimeField(null=True, blank=True)
+    is_verified = models.BooleanField(default=False)
+
+    @property
+    def otp_is_valid(self):
+        if not self.otp_code or not self.otp_created_at:
+            return False
+        return timezone.now() <= self.otp_created_at + timedelta(minutes=10)
+
+    # Daily transaction limits (in KES)
+    daily_deposit_limit = models.DecimalField(
+        max_digits=12, decimal_places=2, default=Decimal('500000.00')
+    )
+    daily_withdrawal_limit = models.DecimalField(
+        max_digits=12, decimal_places=2, default=Decimal('500000.00')
+    )
+    daily_transfer_limit = models.DecimalField(
+        max_digits=12, decimal_places=2, default=Decimal('500000.00')
+    )
+    daily_outflow_limit = models.DecimalField(
+        max_digits=12, decimal_places=2, default=Decimal('1000000.00')
+    )
+
+    def __str__(self):
+        return f"Profile of {self.user.email or self.user.username}"
+
+    # ====================== DAILY LIMIT METHODS ======================
+    def get_daily_used_deposits(self):
+        """Total successful deposits today via M-Pesa"""
+        Transfer = apps.get_model('payments', 'Transfer')   # Lazy import to avoid circular imports
+        today = timezone.now().date()
+        total = Transfer.objects.filter(
+            sender_account__user=self.user,
+            transfer_type='deposit_mpesa',
+            status__in=['completed', 'mpesa_confirmed'],
+            initiated_at__date=today
+        ).aggregate(total=Sum('amount'))['total'] or Decimal('0.00')
+        return total
+
+    def get_remaining_daily_deposits(self):
+        return self.daily_deposit_limit - self.get_daily_used_deposits()
+
+    def get_daily_used_withdrawals(self):
+        """Total withdrawals today"""
+        Transfer = apps.get_model('payments', 'Transfer')
+        today = timezone.now().date()
+        total = Transfer.objects.filter(
+            sender_account__user=self.user,
+            transfer_type='withdraw_mpesa',
+            status__in=['completed', 'pending'],
+            initiated_at__date=today
+        ).aggregate(total=Sum('amount'))['total'] or Decimal('0.00')
+        return total
+
+    def get_daily_used_transfers(self):
+        """Total internal transfers today"""
+        Transfer = apps.get_model('payments', 'Transfer')
+        today = timezone.now().date()
+        total = Transfer.objects.filter(
+            sender_account__user=self.user,
+            transfer_type__in=['internal_same_user', 'internal_other_user'],
+            status='completed',
+            initiated_at__date=today
+        ).aggregate(total=Sum('amount'))['total'] or Decimal('0.00')
+        return total
+
+    def get_daily_used_outflows(self):
+        """Total money leaving the system today"""
+        Transfer = apps.get_model('payments', 'Transfer')
+        today = timezone.now().date()
+        total = Transfer.objects.filter(
+            sender_account__user=self.user,
+            transfer_type__in=[
+                'withdraw_mpesa',
+                'internal_other_user',
+                'external_mpesa',
+                'external_pesalink',
+                'bill_payment'
+            ],
+            status__in=['completed', 'pending'],
+            initiated_at__date=today
+        ).aggregate(total=Sum('amount'))['total'] or Decimal('0.00')
+        return total
+
+
+# Signal to auto-create profile
+from django.db.models.signals import post_save
+from django.dispatch import receiver
+
+
+@receiver(post_save, sender=User)
+def create_user_profile(sender, instance, created, **kwargs):
+    if created:
+        UserProfile.objects.create(user=instance)
+
+
+class Account(models.Model):
+    """Bank account with encrypted account number and balance"""
+    ACCOUNT_TYPES = (
+        ('savings', 'Savings'),
+        ('checking', 'Checking'),
+        ('loan', 'Loan Account'),
+    )
+
+    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='accounts')
+    account_type = models.CharField(max_length=10, choices=ACCOUNT_TYPES, default='savings')
+    account_number_encrypted = models.BinaryField(editable=False, null=True, blank=True)
+    balance_encrypted = models.BinaryField(editable=False, null=True, blank=True)
+
+    @property
+    def balance(self):
+        if not self.balance_encrypted:
+            return Decimal('0.00')
+        try:
+            decrypted_str = FERNET.decrypt(self.balance_encrypted).decode('utf-8')
+            return Decimal(decrypted_str)
+        except (InvalidToken, InvalidOperation, ValueError) as e:
+            print(f"[ERROR] Balance decryption failed for account {self.id}: {e}")
+            return Decimal('0.00')
+
+    @balance.setter
+    def balance(self, value):
+        if value is None:
+            self.balance_encrypted = None
+        else:
+            normalized = Decimal(value).quantize(Decimal('0.01'))
+            plain_text = str(normalized)
+            self.balance_encrypted = FERNET.encrypt(plain_text.encode('utf-8'))
+
+    interest_rate = models.DecimalField(max_digits=5, decimal_places=2, default=3.50)
+    created_at = models.DateTimeField(auto_now_add=True)
+    is_active = models.BooleanField(default=True)
+
+    class Meta:
+        indexes = [models.Index(fields=['user', 'created_at'])]
+
+    def save(self, *args, **kwargs):
+        if not self.account_number_encrypted and self.user_id:
+            ts = int(timezone.now().timestamp())
+            rand = uuid.uuid4().hex[:8].upper()
+            plain = f"SPBK-{self.user.id:06d}-{ts}-{rand}"
+            try:
+                self.account_number_encrypted = FERNET.encrypt(plain.encode('utf-8'))
+            except Exception as e:
+                print(f"[ERROR] Failed to encrypt account number for user {self.user_id}: {e}")
+                raise
+        super().save(*args, **kwargs)
+
+    @property
+    def account_number(self):
+        if not self.account_number_encrypted:
+            return "not-generated-yet"
+        try:
+            return FERNET.decrypt(self.account_number_encrypted).decode('utf-8')
+        except InvalidToken:
+            return "decryption-failed-invalid-token"
+        except Exception as e:
+            print(f"[ERROR] Account number decryption failed for account {self.id}: {e}")
+            return "decryption error"
+
+    def __str__(self):
+        return f"{self.user.email or self.user.username} – {self.account_type} ({self.account_number})"
+
+    def apply_monthly_interest(self):
+        if self.account_type != 'savings' or self.balance <= 0:
+            return
+        monthly_rate = self.interest_rate / 100 / 12
+        interest = self.balance * monthly_rate
+        with atomic():
+            self.balance += interest
+            self.save()
+            Transaction.objects.create(
+                account=self,
+                amount=interest,
+                transaction_type='interest',
+                description='Monthly interest credit',
+                balance_after=self.balance
+            )
+
+
+class Transaction(models.Model):
+    TRANSACTION_TYPES = (
+        ('deposit', 'Deposit'),
+        ('withdraw', 'Withdrawal'),
+        ('transfer_out', 'Transfer Out'),
+        ('transfer_in', 'Transfer In'),
+        ('interest', 'Interest'),
+        ('fee', 'Fee'),
+        ('loan_disbursement', 'Loan Disbursement'),
+        ('loan_repayment', 'Loan Repayment'),
+    )
+
+    CATEGORY_CHOICES = (
+        ('salary', 'Salary / Income'),
+        ('business', 'Business / Sales'),
+        ('remittance', 'Remittance / Money Received'),
+        ('groceries', 'Groceries / Food'),
+        ('transport', 'Transport / Fuel'),
+        ('utilities', 'Utilities / Bills'),
+        ('education', 'Education / School Fees'),
+        ('health', 'Medical / Health'),
+        ('entertainment', 'Entertainment / Leisure'),
+        ('shopping', 'Shopping / Personal'),
+        ('travel', 'Travel'),
+        ('investment', 'Investment / Savings'),
+        ('loan', 'Loan Related'),
+        ('other', 'Other'),
+    )
+
+    account = models.ForeignKey(Account, on_delete=models.CASCADE, related_name='transactions')
+    related_account = models.ForeignKey(
+        Account, on_delete=models.SET_NULL, null=True, blank=True, related_name='related_transactions'
+    )
+    amount = models.DecimalField(max_digits=14, decimal_places=2)
+    transaction_type = models.CharField(max_length=20, choices=TRANSACTION_TYPES)
+    category = models.CharField(max_length=50, choices=CATEGORY_CHOICES, blank=True, default='')
+    description = models.CharField(max_length=255, blank=True)
+    timestamp = models.DateTimeField(auto_now_add=True)
+    balance_after = models.DecimalField(max_digits=14, decimal_places=2)
+
+    class Meta:
+        ordering = ['-timestamp']
+
+    def __str__(self):
+        return f"{self.transaction_type} {self.amount} – {self.timestamp}"
+
+
+class TrustedDevice(models.Model):
+    """Tracks trusted devices for security"""
+    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='trusted_devices')
+    token = models.CharField(max_length=128, unique=True)
+    user_agent = models.TextField(blank=True)
+    ip_address = models.GenericIPAddressField(null=True, blank=True)
+    device_name = models.CharField(max_length=100, blank=True)
+    last_used = models.DateTimeField(auto_now=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        unique_together = ('user', 'token')
+
+    def __str__(self):
+        return f"{self.user} – {self.device_name or 'Unknown device'} ({self.last_used.date()})"
+
+
+class LoanSchedule(models.Model):
+    """Monthly amortization schedule for a loan"""
+    loan = models.ForeignKey('LoanApplication', on_delete=models.CASCADE, related_name='schedule')
+    due_date = models.DateField()
+    installment_amount = models.DecimalField(max_digits=14, decimal_places=2)
+    principal_component = models.DecimalField(max_digits=14, decimal_places=2)
+    interest_component = models.DecimalField(max_digits=14, decimal_places=2)
+    remaining_balance = models.DecimalField(max_digits=14, decimal_places=2)
+    paid = models.BooleanField(default=False)
+    actual_payment_date = models.DateTimeField(null=True, blank=True)
+    late_fee = models.DecimalField(max_digits=10, decimal_places=2, default=Decimal('0.00'))
+
+    class Meta:
+        ordering = ['due_date']
+        unique_together = ('loan', 'due_date')
+
+    def __str__(self):
+        return f"Loan {self.loan.id} - Due {self.due_date} ({'Paid' if self.paid else 'Pending'})"
+
+    def mark_as_paid(self, payment_amount=None, payment_date=None):
+        if not payment_date:
+            payment_date = timezone.now()
+        self.paid = True
+        self.actual_payment_date = payment_date
+        if payment_amount:
+            pass
+        self.save()
+
+
+class LoanApplication(models.Model):
+    STATUS = (
+        ('pending', 'Pending'),
+        ('approved', 'Approved'),
+        ('rejected', 'Rejected'),
+        ('active', 'Active'),
+        ('repaid', 'Fully Repaid'),
+        ('defaulted', 'Defaulted'),
+    )
+
+    account = models.ForeignKey(Account, on_delete=models.CASCADE, related_name='loan_applications')
+    loan_account = models.OneToOneField(
+        Account, on_delete=models.SET_NULL, null=True, blank=True,
+        related_name='linked_loan_application'
+    )
+
+    disbursement_transfer = models.OneToOneField(
+        'payments.Transfer',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='loan_disbursement',
+        help_text="The pending/completed transfer that disbursed this loan"
+    )
+
+    amount_requested = models.DecimalField(max_digits=14, decimal_places=2)
+    interest_rate = models.DecimalField(max_digits=5, decimal_places=2, default=12.00)
+    term_months = models.PositiveIntegerField()
+
+    status = models.CharField(max_length=10, choices=STATUS, default='pending')
+    applied_at = models.DateTimeField(auto_now_add=True)
+    approved_at = models.DateTimeField(null=True, blank=True)
+    approved_by = models.ForeignKey(
+        User, on_delete=models.SET_NULL, null=True, blank=True, related_name='approved_loans'
+    )
+
+    amount_disbursed = models.DecimalField(max_digits=14, decimal_places=2, null=True, blank=True)
+    disbursed_at = models.DateTimeField(null=True, blank=True)
+
+    total_repaid = models.DecimalField(max_digits=14, decimal_places=2, default=Decimal('0.00'))
+    last_repayment_date = models.DateTimeField(null=True, blank=True)
+    total_interest = models.DecimalField(max_digits=14, decimal_places=2, default=Decimal('0.00'))
+    next_due_date = models.DateField(null=True, blank=True)
+
+    class Meta:
+        ordering = ['-applied_at']
+
+    def __str__(self):
+        return f"Loan #{self.id} - {self.account} - {self.status}"
+
+    def send_loan_email(self, subject, message):
+        from django.core.mail import send_mail
+        send_mail(
+            subject=subject,
+            message=message,
+            from_email=settings.DEFAULT_FROM_EMAIL,
+            recipient_list=[self.account.user.email],
+            fail_silently=False,
+        )
+
+    @staticmethod
+    def apply_for_loan(account, amount_requested, interest_rate=12.00, term_months=6):
+        loan = LoanApplication.objects.create(
+            account=account,
+            amount_requested=amount_requested,
+            interest_rate=interest_rate,
+            term_months=term_months,
+            status='pending'
+        )
+
+        Transaction.objects.create(
+            account=account,
+            amount=amount_requested,
+            transaction_type='loan_disbursement',
+            category='loan',
+            description=f"Loan application #{loan.id} – PENDING disbursement",
+            balance_after=account.balance,
+        )
+
+        loan.send_loan_email(
+            subject='Spartan Bank – Loan Application Received',
+            message=f'Your loan application for KES {amount_requested:,.2f} has been received.\n'
+                    f'Application ID: #{loan.id}\n\nWe will review it shortly.'
+        )
+        return loan
+
+    def approve(self, approver, disbursed_amount=None):
+        if self.status != 'pending':
+            print(f"❌ Loan #{self.id} is not pending. Current status: {self.status}")
+            return False
+
+        if disbursed_amount is None:
+            disbursed_amount = self.amount_requested
+
+        try:
+            with db_transaction.atomic():
+                loan_account = Account.objects.create(
+                    user=self.account.user,
+                    account_type='loan',
+                    is_active=True,
+                )
+                loan_account.balance = -disbursed_amount
+                loan_account.save()
+
+                self.loan_account = loan_account
+                self.status = 'approved'
+                self.approved_at = timezone.now()
+                self.approved_by = approver
+                self.amount_disbursed = disbursed_amount
+                self.save()
+
+                self.generate_amortization_schedule()
+
+                from django.apps import apps
+                Transfer = apps.get_model('payments', 'Transfer')
+
+                transfer = Transfer.objects.create(
+                    sender_account=self.account,
+                    amount=disbursed_amount,
+                    fee=Decimal('0.00'),
+                    total_debited=disbursed_amount,
+                    transfer_type='loan_disbursement',
+                    description=f"Disbursement for Loan #{self.id}",
+                    status='pending'
+                )
+
+                self.disbursement_transfer = transfer
+                self.save()
+
+                print(f"✅ SUCCESS: Loan #{self.id} approved successfully!")
+                print(f"   → Pending Transfer created | ID: {transfer.id} | Ref: {transfer.reference}")
+
+                self.send_loan_email(
+                    subject='Spartan Bank – Loan Approved – Awaiting Disbursement',
+                    message=f'Your loan of KES {disbursed_amount:,.2f} has been approved.\n'
+                            f'Loan ID: #{self.id}\n'
+                            f'Final disbursement is pending admin confirmation.'
+                )
+
+                from notifications.signals import send_loan_notification
+                send_loan_notification(self, "approved")
+
+            return True
+
+        except Exception as e:
+            import traceback
+            print(f"❌ FAILED to approve Loan #{self.id}")
+            print(f"Error: {str(e)}")
+            traceback.print_exc()
+            return False
+
+    @property
+    def remaining_balance(self):
+        if not self.amount_disbursed:
+            return self.amount_requested
+
+        unpaid = self.schedule.filter(paid=False).aggregate(
+            total=Sum('installment_amount') + Sum('late_fee', default=Decimal('0.00'))
+        )['total'] or Decimal('0.00')
+
+        calculated_remaining = max(Decimal('0.00'), 
+                                   self.amount_disbursed + self.total_interest - self.total_repaid)
+        
+        return max(unpaid, calculated_remaining)
+
+    def mark_as_fully_repaid(self):
+        self.status = 'repaid'
+        self.save()
+        self.send_loan_email(
+            subject='Spartan Bank – Loan Fully Repaid 🎉',
+            message=f'Congratulations! Your loan #{self.id} has been fully repaid.\n'
+                    f'You can now apply for a new loan.'
+        )
+        from notifications.signals import send_loan_notification
+        send_loan_notification(self, "fully_repaid")
+
+    def check_for_default(self):
+        if self.status in ['repaid', 'defaulted']:
+            return
+        today = timezone.now().date()
+        oldest_unpaid = self.schedule.filter(paid=False).order_by('due_date').first()
+        if oldest_unpaid and (today - oldest_unpaid.due_date).days > 60:
+            self.status = 'defaulted'
+            self.save()
+
+    def generate_amortization_schedule(self):
+        if not self.amount_disbursed or self.term_months < 1:
+            return
+
+        principal = self.amount_disbursed
+        monthly_rate = (self.interest_rate / Decimal('100')) / Decimal('12')
+
+        if monthly_rate == 0:
+            emi = principal / self.term_months
+        else:
+            power = (Decimal('1') + monthly_rate) ** self.term_months
+            emi = principal * monthly_rate * power / (power - 1)
+
+        emi = emi.quantize(Decimal('0.01'))
+
+        self.total_interest = Decimal('0.00')
+        balance = principal
+        start_date = self.disbursed_at.date() if self.disbursed_at else timezone.now().date()
+
+        self.schedule.all().delete()
+
+        for i in range(1, self.term_months + 1):
+            interest = (balance * monthly_rate).quantize(Decimal('0.01'))
+            principal_payment = (emi - interest).quantize(Decimal('0.01'))
+            balance = (balance - principal_payment).quantize(Decimal('0.01'))
+
+            due_date = start_date + relativedelta(months=+i)
+
+            LoanSchedule.objects.create(
+                loan=self,
+                due_date=due_date,
+                installment_amount=emi,
+                principal_component=principal_payment,
+                interest_component=interest,
+                remaining_balance=max(balance, Decimal('0.00')),
+            )
+
+            self.total_interest += interest
+
+        self.next_due_date = self.schedule.first().due_date if self.schedule.exists() else None
+        self.save()

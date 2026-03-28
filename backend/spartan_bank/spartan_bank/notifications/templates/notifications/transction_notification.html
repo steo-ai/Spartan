@@ -1,0 +1,116 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Spartan Bank Transaction Alert</title>
+  <style>
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background-color: #f4f4f9;
+      margin: 0;
+      padding: 0;
+      color: #333;
+    }
+    .container {
+      max-width: 600px;
+      margin: 20px auto;
+      background: white;
+      border-radius: 12px;
+      overflow: hidden;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+    }
+    .header {
+      background: linear-gradient(135deg, #1e3a8a, #3b82f6);
+      color: white;
+      padding: 24px;
+      text-align: center;
+    }
+    .header h1 {
+      margin: 0;
+      font-size: 24px;
+    }
+    .content {
+      padding: 24px;
+    }
+    .amount {
+      font-size: 32px;
+      font-weight: bold;
+      margin: 16px 0;
+      text-align: center;
+    }
+    .positive { color: #10b981; }
+    .negative { color: #ef4444; }
+    .details {
+      background: #f8fafc;
+      padding: 16px;
+      border-radius: 8px;
+      margin: 16px 0;
+    }
+    .details p {
+      margin: 8px 0;
+    }
+    .footer {
+      background: #f1f5f9;
+      padding: 16px;
+      text-align: center;
+      font-size: 14px;
+      color: #64748b;
+    }
+    .button {
+      display: inline-block;
+      background: #3b82f6;
+      color: white;
+      padding: 12px 24px;
+      text-decoration: none;
+      border-radius: 6px;
+      margin: 16px 0;
+    }
+    .security-note {
+      font-size: 13px;
+      color: #64748b;
+      text-align: center;
+      margin-top: 24px;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="header">
+      <h1>Spartan Bank</h1>
+      <p>Transaction Alert</p>
+    </div>
+
+    <div class="content">
+      <p>Dear {{ user_name|default:user_email }},</p>
+
+      <p>Your account has just been updated:</p>
+
+      <div class="amount {% if transaction.amount > 0 %}positive{% else %}negative{% endif %}">
+        {% if transaction.amount > 0 %}+{% endif %}{{ transaction.amount|floatformat:2 }} KES
+      </div>
+
+      <div class="details">
+        <p><strong>Type:</strong> {{ transaction.get_transaction_type_display }}</p>
+        <p><strong>Description:</strong> {{ transaction.description|default:"—" }}</p>
+        <p><strong>Account ending in:</strong> {{ account_last4 }}</p>
+        <p><strong>New balance:</strong> {{ transaction.balance_after|floatformat:2 }} KES</p>
+        <p><strong>Date:</strong> {{ transaction.timestamp|date:"d M Y H:i" }} EAT</p>
+      </div>
+
+      <p style="text-align: center;">
+        <a href="https://your-app-domain.com/dashboard" class="button">View in App</a>
+      </p>
+
+      <p class="security-note">
+        If you did not perform this transaction, please contact support immediately at support@spartanbank.co.ke or freeze your account in the app.
+      </p>
+    </div>
+
+    <div class="footer">
+      © {{ year }} Spartan Bank. All rights reserved.<br>
+      Nairobi, Kenya
+    </div>
+  </div>
+</body>
+</html>
