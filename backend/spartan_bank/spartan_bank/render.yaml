@@ -1,0 +1,68 @@
+version: 1
+
+# PostgreSQL Database (recommended for production instead of SQLite)
+databases:
+  - name: spartanbank-db
+    plan: free                  # Change to "starter" or higher when needed
+    databaseName: spartanbank
+    user: spartanbank
+    # Optional: restrict IP access if needed
+    # ipAllowList:
+    #   - source: "0.0.0.0/0"
+
+services:
+  - type: web
+    name: spartan-bank
+    runtime: python
+    plan: free                    # Change to "starter" or "standard" for production
+    region: frankfurt             # or "oregon", "singapore", etc. (choose close to Nairobi)
+    
+    # Build commands (runs during deploy)
+    buildCommand: |
+      pip install -r requirements.txt
+      python manage.py collectstatic --noinput
+      python manage.py migrate --noinput
+
+    # Start command (uses gunicorn - strongly recommended for production)
+    startCommand: gunicorn spartan_bank.wsgi:application --bind 0.0.0.0:$PORT
+
+    # Environment variables
+    envVars:
+      # Database (automatically injected from the database above)
+      - key: DATABASE_URL
+        fromDatabase:
+          name: spartanbank-db
+          property: connectionString
+
+      # Required secrets (you must add these manually in the Render Dashboard)
+      - key: SECRET_KEY
+        sync: false                 # Do NOT commit real value to git
+      - key: ENCRYPTION_KEY
+        sync: false
+      - key: EMAIL_HOST_PASSWORD
+        sync: false
+
+      # Optional but recommended (add these in Render Dashboard too)
+      - key: DEBUG
+        value: "False"
+      - key: ALLOWED_HOSTS
+        value: "your-app.onrender.com,*.onrender.com"   # Update after first deploy
+      - key: CORS_ALLOWED_ORIGINS
+        value: "https://your-frontend-domain.com,http://localhost:3000"
+
+      # Email settings (Gmail)
+      - key: EMAIL_HOST_USER
+        value: "grandviewshopafrica@gmail.com"
+      - key: ADMIN_EMAIL
+        value: "grandviewshopafrica@gmail.com"
+
+      # Other useful settings
+      - key: PYTHON_VERSION
+        value: "3.12"               # or 3.11 / 3.13 depending on your needs
+      - key: DJANGO_SETTINGS_MODULE
+        value: "spartan_bank.settings"
+
+# Optional: Add a Redis instance if you use Celery, channels, cache, etc. later
+#   - type: redis
+#     name: spartanbank-redis
+#     plan: free
