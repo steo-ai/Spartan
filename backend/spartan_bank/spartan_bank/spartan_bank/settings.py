@@ -35,7 +35,7 @@ print(f"[DEBUG] ENCRYPTION_KEY loaded (base64 string, len={len(ENCRYPTION_KEY)})
 # ────────────────────────────────────────────────────────────────
 ALLOWED_HOSTS = config(
     "ALLOWED_HOSTS",
-    default="localhost,127.0.0.1",
+    default="localhost,127.0.0.1,https://spartan-swjb.onrender.com,https://spartan-bank.vercel.app",
     cast=lambda v: [s.strip() for s in v.split(",")],
 )
 
