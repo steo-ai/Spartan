@@ -33,11 +33,13 @@ print(f"[DEBUG] ENCRYPTION_KEY loaded (base64 string, len={len(ENCRYPTION_KEY)})
 # ────────────────────────────────────────────────────────────────
 # Hosts & CORS
 # ────────────────────────────────────────────────────────────────
-ALLOWED_HOSTS = config(
-    "ALLOWED_HOSTS",
-    default="localhost,127.0.0.1,https://spartan-swjb.onrender.com,https://spartan-bank.vercel.app",
-    cast=lambda v: [s.strip() for s in v.split(",")],
-)
+ALLOWED_HOSTS = [
+    'localhost',
+    '127.0.0.1',
+    'spartan-swjb.onrender.com',
+    'spartan-bank.vercel.app',
+
+]
 
 CSRF_TRUSTED_ORIGINS = [
     "http://localhost:3000",
@@ -47,11 +49,14 @@ CSRF_TRUSTED_ORIGINS = [
                     
 ]
 
-CORS_ALLOWED_ORIGINS = config(
-    "CORS_ALLOWED_ORIGINS",
-    default="http://localhost:3000,http://127.0.0.1:3000,https://spartan-swjb.onrender.com,https://spartan-bank.vercel.app",
-    cast=lambda v: [s.strip() for s in v.split(",")],
-)
+CORS_ALLOWED_ORIGINS = [
+    "http://localhost:3000",
+    "http://127.0.0.1:3000",
+    'https://spartan-bank.vercel.app',
+    'https://spartan-swjb.onrender.com',
+   
+]
+
 CORS_ALLOW_CREDENTIALS = True
 CORS_ALLOW_ALL_ORIGINS = False  # ← Never turn this on in production!
 
