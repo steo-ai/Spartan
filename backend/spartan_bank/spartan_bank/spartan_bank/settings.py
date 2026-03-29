@@ -1,6 +1,8 @@
 from pathlib import Path
 from decouple import config
 from datetime import timedelta
+import dj_database_url
+import os
 import base64
 from django.core.exceptions import ImproperlyConfigured
 
@@ -40,12 +42,14 @@ ALLOWED_HOSTS = config(
 CSRF_TRUSTED_ORIGINS = [
     "http://localhost:3000",
     "http://127.0.0.1:3000",
-    # "https://your-frontend-domain.com",          # ← add when deploying
+    "https://spartan-bank.vercel.app", 
+    "https://spartan-swjb.onrender.com"
+                    
 ]
 
 CORS_ALLOWED_ORIGINS = config(
     "CORS_ALLOWED_ORIGINS",
-    default="http://localhost:3000,http://127.0.0.1:3000",
+    default="http://localhost:3000,http://127.0.0.1:3000,https://spartan-swjb.onrender.com,https://spartan-bank.vercel.app",
     cast=lambda v: [s.strip() for s in v.split(",")],
 )
 CORS_ALLOW_CREDENTIALS = True
@@ -92,15 +96,27 @@ MIDDLEWARE = [
     "django.middleware.clickjacking.XFrameOptionsMiddleware",
 ]
 
-# ────────────────────────────────────────────────────────────────
-# Database (SQLite for development — switch to PostgreSQL in prod)
-# ────────────────────────────────────────────────────────────────
-DATABASES = {
-    "default": {
-        "ENGINE": "django.db.backends.sqlite3",
-        "NAME": BASE_DIR / "db.sqlite3",
+# ──────────────────────────────────────────────────────────────
+# DATABASE – works on Render build + runtime + local dev
+# ──────────────────────────────────────────────────────────────
+if "DATABASE_URL" in os.environ:
+    # Render production (and preview environments)
+    DATABASES = {
+        "default": dj_database_url.parse(
+            os.environ["DATABASE_URL"],
+            conn_max_age=0,
+            conn_health_checks=True,
+            ssl_require=True,
+        )
     }
-}
+else:
+    # Local development OR Render build step → fall back to SQLite
+    DATABASES = {
+        "default": {
+            "ENGINE": "django.db.backends.sqlite3",
+            "NAME": BASE_DIR / "db.sqlite3",
+        }
+    }
 
 # ────────────────────────────────────────────────────────────────
 # Templates
