@@ -10,13 +10,20 @@ from decimal import Decimal, InvalidOperation
 from datetime import timedelta
 from django.conf import settings
 from dateutil.relativedelta import relativedelta
-from django.apps import apps  # ← Added for lazy import
+from django.apps import apps
+import logging
 
+logger = logging.getLogger(__name__)
 
 # ────────────────────────────────────────────────
-# Encryption setup
+# Encryption Setup - Safe Initialization
 # ────────────────────────────────────────────────
-FERNET = Fernet(settings.ENCRYPTION_KEY)
+try:
+    FERNET = Fernet(settings.ENCRYPTION_KEY)
+    logger.info("✅ Fernet encryption initialized successfully")
+except Exception as e:
+    logger.error(f"❌ Failed to initialize Fernet with ENCRYPTION_KEY: {e}")
+    FERNET = None  # Prevent crashes if key is invalid
 
 
 class UserProfile(models.Model):
@@ -60,8 +67,7 @@ class UserProfile(models.Model):
 
     # ====================== DAILY LIMIT METHODS ======================
     def get_daily_used_deposits(self):
-        """Total successful deposits today via M-Pesa"""
-        Transfer = apps.get_model('payments', 'Transfer')   # Lazy import to avoid circular imports
+        Transfer = apps.get_model('payments', 'Transfer')
         today = timezone.now().date()
         total = Transfer.objects.filter(
             sender_account__user=self.user,
@@ -75,7 +81,6 @@ class UserProfile(models.Model):
         return self.daily_deposit_limit - self.get_daily_used_deposits()
 
     def get_daily_used_withdrawals(self):
-        """Total withdrawals today"""
         Transfer = apps.get_model('payments', 'Transfer')
         today = timezone.now().date()
         total = Transfer.objects.filter(
@@ -87,7 +92,6 @@ class UserProfile(models.Model):
         return total
 
     def get_daily_used_transfers(self):
-        """Total internal transfers today"""
         Transfer = apps.get_model('payments', 'Transfer')
         today = timezone.now().date()
         total = Transfer.objects.filter(
@@ -99,17 +103,13 @@ class UserProfile(models.Model):
         return total
 
     def get_daily_used_outflows(self):
-        """Total money leaving the system today"""
         Transfer = apps.get_model('payments', 'Transfer')
         today = timezone.now().date()
         total = Transfer.objects.filter(
             sender_account__user=self.user,
             transfer_type__in=[
-                'withdraw_mpesa',
-                'internal_other_user',
-                'external_mpesa',
-                'external_pesalink',
-                'bill_payment'
+                'withdraw_mpesa', 'internal_other_user', 'external_mpesa',
+                'external_pesalink', 'bill_payment'
             ],
             status__in=['completed', 'pending'],
             initiated_at__date=today
@@ -120,7 +120,6 @@ class UserProfile(models.Model):
 # Signal to auto-create profile
 from django.db.models.signals import post_save
 from django.dispatch import receiver
-
 
 @receiver(post_save, sender=User)
 def create_user_profile(sender, instance, created, **kwargs):
@@ -138,28 +137,9 @@ class Account(models.Model):
 
     user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='accounts')
     account_type = models.CharField(max_length=10, choices=ACCOUNT_TYPES, default='savings')
+    
     account_number_encrypted = models.BinaryField(editable=False, null=True, blank=True)
     balance_encrypted = models.BinaryField(editable=False, null=True, blank=True)
-
-    @property
-    def balance(self):
-        if not self.balance_encrypted:
-            return Decimal('0.00')
-        try:
-            decrypted_str = FERNET.decrypt(self.balance_encrypted).decode('utf-8')
-            return Decimal(decrypted_str)
-        except (InvalidToken, InvalidOperation, ValueError) as e:
-            print(f"[ERROR] Balance decryption failed for account {self.id}: {e}")
-            return Decimal('0.00')
-
-    @balance.setter
-    def balance(self, value):
-        if value is None:
-            self.balance_encrypted = None
-        else:
-            normalized = Decimal(value).quantize(Decimal('0.01'))
-            plain_text = str(normalized)
-            self.balance_encrypted = FERNET.encrypt(plain_text.encode('utf-8'))
 
     interest_rate = models.DecimalField(max_digits=5, decimal_places=2, default=3.50)
     created_at = models.DateTimeField(auto_now_add=True)
@@ -168,29 +148,65 @@ class Account(models.Model):
     class Meta:
         indexes = [models.Index(fields=['user', 'created_at'])]
 
-    def save(self, *args, **kwargs):
-        if not self.account_number_encrypted and self.user_id:
-            ts = int(timezone.now().timestamp())
-            rand = uuid.uuid4().hex[:8].upper()
-            plain = f"SPBK-{self.user.id:06d}-{ts}-{rand}"
-            try:
-                self.account_number_encrypted = FERNET.encrypt(plain.encode('utf-8'))
-            except Exception as e:
-                print(f"[ERROR] Failed to encrypt account number for user {self.user_id}: {e}")
-                raise
-        super().save(*args, **kwargs)
+    # ====================== BALANCE PROPERTY (Safe Decryption) ======================
+    @property
+    def balance(self):
+        if not self.balance_encrypted or FERNET is None:
+            return Decimal('0.00')
+        
+        try:
+            decrypted_str = FERNET.decrypt(self.balance_encrypted).decode('utf-8')
+            return Decimal(decrypted_str)
+        except (InvalidToken, InvalidOperation, ValueError, TypeError) as e:
+            logger.error(f"Balance decryption failed for account {self.id}: {e}")
+            return Decimal('0.00')
 
+    @balance.setter
+    def balance(self, value):
+        if FERNET is None:
+            logger.error("Cannot set balance: Fernet is not initialized")
+            return
+
+        if value is None:
+            self.balance_encrypted = None
+            return
+
+        try:
+            normalized = Decimal(value).quantize(Decimal('0.01'))
+            plain_text = str(normalized)
+            self.balance_encrypted = FERNET.encrypt(plain_text.encode('utf-8'))
+        except Exception as e:
+            logger.error(f"Failed to encrypt balance for account {self.id}: {e}")
+            raise
+
+    # ====================== ACCOUNT NUMBER PROPERTY (Safe Decryption) ======================
     @property
     def account_number(self):
-        if not self.account_number_encrypted:
+        if not self.account_number_encrypted or FERNET is None:
             return "not-generated-yet"
+        
         try:
             return FERNET.decrypt(self.account_number_encrypted).decode('utf-8')
         except InvalidToken:
+            logger.warning(f"Invalid token for account number decryption (account {self.id})")
             return "decryption-failed-invalid-token"
         except Exception as e:
-            print(f"[ERROR] Account number decryption failed for account {self.id}: {e}")
-            return "decryption error"
+            logger.error(f"Account number decryption failed for account {self.id}: {e}")
+            return "decryption-error"
+
+    def save(self, *args, **kwargs):
+        # Auto-generate encrypted account number if missing
+        if not self.account_number_encrypted and self.user_id:
+            try:
+                ts = int(timezone.now().timestamp())
+                rand = uuid.uuid4().hex[:8].upper()
+                plain = f"SPBK-{self.user.id:06d}-{ts}-{rand}"
+                self.account_number_encrypted = FERNET.encrypt(plain.encode('utf-8'))
+            except Exception as e:
+                logger.error(f"Failed to encrypt account number for user {self.user_id}: {e}")
+                raise
+
+        super().save(*args, **kwargs)
 
     def __str__(self):
         return f"{self.user.email or self.user.username} – {self.account_type} ({self.account_number})"
@@ -393,7 +409,7 @@ class LoanApplication(models.Model):
 
     def approve(self, approver, disbursed_amount=None):
         if self.status != 'pending':
-            print(f"❌ Loan #{self.id} is not pending. Current status: {self.status}")
+            logger.warning(f"Loan #{self.id} is not pending. Current status: {self.status}")
             return False
 
         if disbursed_amount is None:
@@ -434,8 +450,7 @@ class LoanApplication(models.Model):
                 self.disbursement_transfer = transfer
                 self.save()
 
-                print(f"✅ SUCCESS: Loan #{self.id} approved successfully!")
-                print(f"   → Pending Transfer created | ID: {transfer.id} | Ref: {transfer.reference}")
+                logger.info(f"✅ SUCCESS: Loan #{self.id} approved successfully!")
 
                 self.send_loan_email(
                     subject='Spartan Bank – Loan Approved – Awaiting Disbursement',
@@ -450,9 +465,8 @@ class LoanApplication(models.Model):
             return True
 
         except Exception as e:
+            logger.error(f"❌ FAILED to approve Loan #{self.id}: {e}")
             import traceback
-            print(f"❌ FAILED to approve Loan #{self.id}")
-            print(f"Error: {str(e)}")
             traceback.print_exc()
             return False
 
