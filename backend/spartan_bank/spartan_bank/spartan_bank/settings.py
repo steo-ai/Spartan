@@ -81,6 +81,7 @@ INSTALLED_APPS = [
 # ────────────────────────────────────────────────────────────────
 MIDDLEWARE = [
     "django.middleware.security.SecurityMiddleware",
+    "whitenoise.middleware.WhiteNoiseMiddleware",
     "django.contrib.sessions.middleware.SessionMiddleware",
     "corsheaders.middleware.CorsMiddleware",  # should be near top
     "django.middleware.common.CommonMiddleware",
@@ -228,3 +229,15 @@ SECURE_HSTS_PRELOAD = True
 SECURE_CONTENT_TYPE_NOSNIFF = True
 SECURE_BROWSER_XSS_FILTER = True
 X_FRAME_OPTIONS = "DENY"
+
+# ────────────────────────────────────────────────────────────────
+# Static files
+# ────────────────────────────────────────────────────────────────
+STATIC_URL = "static/"
+
+# Important for production (Render + collectstatic)
+STATIC_ROOT = BASE_DIR / "staticfiles"
+
+# Optional but highly recommended: Use WhiteNoise for better performance
+# (compresses files + adds cache headers)
+STATICFILES_STORAGE = "whitenoise.storage.CompressedManifestStaticFilesStorage"
