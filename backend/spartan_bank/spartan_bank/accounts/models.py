@@ -148,14 +148,38 @@ class Account(models.Model):
     class Meta:
         indexes = [models.Index(fields=['user', 'created_at'])]
 
-    # ====================== BALANCE PROPERTY (Safe Decryption) ======================
+    # ====================== HELPER: SAFE DECRYPT ======================
+    def _safe_decrypt(self, encrypted_field):
+        """Safely decrypt BinaryField which may return memoryview/bytearray"""
+        if not encrypted_field or FERNET is None:
+            return None
+
+        try:
+            # Fix for "token must be bytes or str" error
+            token = encrypted_field
+            if isinstance(token, (memoryview, bytearray)):
+                token = bytes(token)
+            elif isinstance(token, str):
+                token = token.encode('utf-8')
+            elif not isinstance(token, bytes):
+                token = bytes(token)  # last resort
+
+            return FERNET.decrypt(token).decode('utf-8')
+        except InvalidToken:
+            logger.warning(f"Invalid token during decryption (account {self.id})")
+            raise
+        except Exception as e:
+            logger.error(f"Decryption failed for account {self.id}: {e}")
+            raise
+
+    # ====================== BALANCE PROPERTY ======================
     @property
     def balance(self):
         if not self.balance_encrypted or FERNET is None:
             return Decimal('0.00')
         
         try:
-            decrypted_str = FERNET.decrypt(self.balance_encrypted).decode('utf-8')
+            decrypted_str = self._safe_decrypt(self.balance_encrypted)
             return Decimal(decrypted_str)
         except (InvalidToken, InvalidOperation, ValueError, TypeError) as e:
             logger.error(f"Balance decryption failed for account {self.id}: {e}")
@@ -179,14 +203,15 @@ class Account(models.Model):
             logger.error(f"Failed to encrypt balance for account {self.id}: {e}")
             raise
 
-    # ====================== ACCOUNT NUMBER PROPERTY (Safe Decryption) ======================
+    # ====================== ACCOUNT NUMBER PROPERTY ======================
     @property
     def account_number(self):
         if not self.account_number_encrypted or FERNET is None:
             return "not-generated-yet"
         
         try:
-            return FERNET.decrypt(self.account_number_encrypted).decode('utf-8')
+            decrypted = self._safe_decrypt(self.account_number_encrypted)
+            return decrypted
         except InvalidToken:
             logger.warning(f"Invalid token for account number decryption (account {self.id})")
             return "decryption-failed-invalid-token"
