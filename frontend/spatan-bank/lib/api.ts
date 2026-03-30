@@ -2,8 +2,8 @@
 
 import { UserProfile, Account, Card, Transaction } from "@/lib/types"
 
-const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000/api"
-//const API_BASE = process.env.NEXT_PUBLIC_API_URL || "https://spartan-swjb.onrender.com/api"
+//const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000/api"
+const API_BASE = process.env.NEXT_PUBLIC_API_URL || "https://spartan-swjb.onrender.com/api"
 
 // ─── Generic Fetch Wrapper ───────────────────────────────────────────────────────
 async function apiFetch<T>(
