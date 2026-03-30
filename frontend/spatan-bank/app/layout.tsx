@@ -8,6 +8,7 @@ import { Suspense } from "react";
 
 import ClientWrapper from "@/components/ClientWrapper";
 import SuspensionGuard from '@/components/SuspensionGuard';
+import { ThemeProvider } from "@/components/theme-provider";   // ← Import here
 
 import "./globals.css";
 
@@ -40,7 +41,7 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en" className="dark">
+    <html lang="en" className="dark" suppressHydrationWarning>
       <head>
         <link rel="manifest" href="/manifest.json" />
         <meta name="theme-color" content="#1e40af" />
@@ -60,11 +61,17 @@ export default function RootLayout({
             </div>
           }
         >
-          <ClientWrapper>
-            {children}
-            <SuspensionGuard />
-            {/* Floating InstallButton removed */}
-          </ClientWrapper>
+          <ThemeProvider
+            attribute="class"
+            defaultTheme="dark"
+            enableSystem={false}
+            disableTransitionOnChange
+          >
+            <ClientWrapper>
+              {children}
+              <SuspensionGuard />
+            </ClientWrapper>
+          </ThemeProvider>
 
           <Toaster 
             theme="dark"

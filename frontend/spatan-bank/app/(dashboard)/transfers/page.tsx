@@ -1,6 +1,6 @@
-"use client"
+"use client";
 
-import { useState, useEffect } from "react"
+import { useState, useEffect } from "react";
 import {
   ArrowLeftRight,
   Users,
@@ -12,35 +12,35 @@ import {
   AlertCircle,
   ChevronRight,
   Star,
-} from "lucide-react"
-import { useAuth } from "@/contexts/auth-context"
-import { LiquidGlassCard, LiquidGlassButton, LiquidGlassInput, LiquidGlassSelect } from "@/components/spartan/liquid-glass-card"
-import { cn } from "@/lib/utils"
-import api from "@/lib/api"
-import { toast } from "@/hooks/use-toast"
+  Plus,
+} from "lucide-react";
+import { useAuth } from "@/contexts/auth-context";
+import { LiquidGlassCard, LiquidGlassButton, LiquidGlassInput, LiquidGlassSelect } from "@/components/spartan/liquid-glass-card";
+import { cn } from "@/lib/utils";
+import api from "@/lib/api";
+import { toast } from "sonner";
 
-type TransferType = "internal" | "spartan" | "mpesa" | "pesalink"
+type TransferType = "internal" | "spartan" | "mpesa" | "pesalink";
 
 const transferTypes = [
   { id: "internal", label: "Between My Accounts", icon: ArrowLeftRight, description: "Move money between your Spartan accounts" },
   { id: "spartan", label: "To Spartan User", icon: Users, description: "Send to another Spartan Bank customer" },
   { id: "mpesa", label: "To M-Pesa", icon: Smartphone, description: "Send to any M-Pesa number" },
   { id: "pesalink", label: "To Other Bank", icon: Building2, description: "Send via Pesalink to other banks" },
-]
+];
 
 export default function TransfersPage() {
-  const { accounts } = useAuth()
+  const { accounts, refreshData } = useAuth();
 
-  const [selectedType, setSelectedType] = useState<TransferType>("internal")
-  const [step, setStep] = useState(1)
-  const [isProcessing, setIsProcessing] = useState(false)
-  const [isSuccess, setIsSuccess] = useState(false)
+  const [selectedType, setSelectedType] = useState<TransferType>("internal");
+  const [step, setStep] = useState(1);
+  const [isProcessing, setIsProcessing] = useState(false);
+  const [isSuccess, setIsSuccess] = useState(false);
 
-  // Real backend data
-  const [frequentRecipients, setFrequentRecipients] = useState<any[]>([])
-  const [recentTransfers, setRecentTransfers] = useState<any[]>([])
-  const [loadingFrequent, setLoadingFrequent] = useState(true)
-  const [loadingRecent, setLoadingRecent] = useState(true)
+  const [frequentRecipients, setFrequentRecipients] = useState<any[]>([]);
+  const [recentTransfers, setRecentTransfers] = useState<any[]>([]);
+  const [loadingFrequent, setLoadingFrequent] = useState(true);
+  const [loadingRecent, setLoadingRecent] = useState(true);
 
   const [formData, setFormData] = useState({
     fromAccount: "",
@@ -49,14 +49,16 @@ export default function TransfersPage() {
     amount: "",
     description: "",
     bank: "",
-  })
+  });
 
-  const safeAccounts = Array.isArray(accounts) ? accounts : []
+  // Safe accounts handling
+  const safeAccounts = Array.isArray(accounts) ? accounts : [];
+  const hasAccounts = safeAccounts.length > 0;
 
   const accountOptions = safeAccounts.map((acc: any) => ({
     value: acc.id?.toString() || "",
-    label: `${(acc.account_type || "Account").charAt(0).toUpperCase() + (acc.account_type || "").slice(1)} - ${acc.account_number?.slice(-6) || "••••••"} (KES ${(acc.balance || 0).toLocaleString()})`,
-  }))
+    label: `${(acc.account_type || "Account").charAt(0).toUpperCase() + (acc.account_type || "").slice(1)} ••••${acc.account_number?.slice(-6) || "••••••"} (KES ${(acc.balance || 0).toLocaleString()})`,
+  }));
 
   const bankOptions = [
     { value: "kcb", label: "KCB Bank" },
@@ -66,127 +68,115 @@ export default function TransfersPage() {
     { value: "stanbic", label: "Stanbic Bank" },
     { value: "dtb", label: "DTB Bank" },
     { value: "ncba", label: "NCBA Bank" },
-  ]
+  ];
 
   const updateField = (field: string, value: string) => {
-    setFormData((prev) => ({ ...prev, [field]: value }))
-  }
+    setFormData((prev) => ({ ...prev, [field]: value }));
+  };
 
   const formatCurrency = (amount: number) => {
     return new Intl.NumberFormat("en-KE", {
       style: "currency",
       currency: "KES",
       minimumFractionDigits: 0,
-    }).format(amount)
-  }
+    }).format(amount);
+  };
 
   const getTransferFee = () => {
-    const amount = Number(formData.amount) || 0
-    if (selectedType === "internal" || selectedType === "spartan") return 0
-    if (selectedType === "mpesa") return amount <= 100 ? 0 : Math.min(amount * 0.01, 100)
-    if (selectedType === "pesalink") return 50
-    return 0
-  }
+    const amount = Number(formData.amount) || 0;
+    if (selectedType === "internal" || selectedType === "spartan") return 0;
+    if (selectedType === "mpesa") return amount <= 100 ? 0 : Math.min(amount * 0.01, 100);
+    if (selectedType === "pesalink") return 50;
+    return 0;
+  };
 
-  // Fetch Frequent Recipients
+  // Fetch supporting data
   const fetchFrequentRecipients = async () => {
     try {
-      setLoadingFrequent(true)
-      const response = await api.payments.frequentRecipients(5)
-      setFrequentRecipients(response.results || [])
+      setLoadingFrequent(true);
+      const response = await api.payments.frequentRecipients(5);
+      setFrequentRecipients(response.results || response || []);
     } catch (err) {
-      console.error("Failed to fetch frequent recipients:", err)
-      setFrequentRecipients([])
+      console.error("Failed to fetch frequent recipients:", err);
+      setFrequentRecipients([]);
     } finally {
-      setLoadingFrequent(false)
+      setLoadingFrequent(false);
     }
-  }
+  };
 
-  // Fetch Recent Transfers - Improved
   const fetchRecentTransfers = async () => {
     try {
-      setLoadingRecent(true)
-      
-      const response = await api.transactions.getTransactions({
-        page_size: 8,
-      })
-
-      // Handle both paginated response and direct array
-      const results = response.results || response || []
-
-      // Sort by newest first
+      setLoadingRecent(true);
+      const response = await api.transactions.getTransactions({ page_size: 8 });
+      const results = response.results || response || [];
       const sorted = [...results].sort((a, b) => 
         new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()
-      )
-
-      setRecentTransfers(sorted)
+      );
+      setRecentTransfers(sorted);
     } catch (err) {
-      console.error("Failed to fetch recent transfers:", err)
-      setRecentTransfers([])
+      console.error("Failed to fetch recent transfers:", err);
+      setRecentTransfers([]);
     } finally {
-      setLoadingRecent(false)
+      setLoadingRecent(false);
     }
-  }
+  };
 
-  // Load data when accounts are available
+  // Load data when accounts are ready
   useEffect(() => {
-    if (accounts && accounts.length > 0) {
-      fetchFrequentRecipients()
-      fetchRecentTransfers()
+    if (hasAccounts) {
+      fetchFrequentRecipients();
+      fetchRecentTransfers();
     }
-  }, [accounts])
+  }, [hasAccounts]);
 
   const handleContinue = () => {
     if (!formData.fromAccount || !formData.amount || Number(formData.amount) <= 0) {
-      toast({ variant: "destructive", description: "Please select an account and enter a valid amount" })
-      return
+      toast.error("Please select an account and enter a valid amount");
+      return;
     }
-    setStep(2)
-  }
+    setStep(2);
+  };
 
   const handleConfirmTransfer = async () => {
-    setIsProcessing(true)
+    setIsProcessing(true);
 
     try {
-      const fromId = Number(formData.fromAccount)
-      const amt = Number(formData.amount)
+      const fromId = Number(formData.fromAccount);
+      const amt = Number(formData.amount);
 
       if (selectedType === "internal") {
-        if (!formData.toAccount) throw new Error("Please select destination account")
-        await api.payments.internalTransfer(fromId, Number(formData.toAccount), amt, formData.description)
-      } 
-      else if (selectedType === "mpesa") {
-        if (!formData.recipient) throw new Error("Please enter M-Pesa phone number")
-        await api.payments.withdraw(fromId, amt, formData.recipient, formData.description)
-      } 
-      else if (selectedType === "spartan") {
-        if (!formData.recipient) throw new Error("Please enter recipient account number")
-        await api.payments.internalTransfer(fromId, Number(formData.recipient), amt, formData.description)
-      } 
-      else if (selectedType === "pesalink") {
-        toast({ variant: "destructive", description: "Pesalink support coming soon" })
-        return
+        if (!formData.toAccount) throw new Error("Please select destination account");
+        await api.payments.internalTransfer(fromId, Number(formData.toAccount), amt, formData.description);
+      } else if (selectedType === "mpesa") {
+        if (!formData.recipient) throw new Error("Please enter M-Pesa phone number");
+        await api.payments.withdraw(fromId, amt, formData.recipient, formData.description);
+      } else if (selectedType === "spartan") {
+        if (!formData.recipient) throw new Error("Please enter recipient account number");
+        await api.payments.internalTransfer(fromId, Number(formData.recipient), amt, formData.description);
+      } else if (selectedType === "pesalink") {
+        toast.error("Pesalink support coming soon");
+        return;
       }
 
-      setIsSuccess(true)
-      toast({ title: "✅ Success", description: "Transfer completed successfully!" })
+      setIsSuccess(true);
+      toast.success("Transfer completed successfully!");
 
-      // Refresh sidebar after successful transfer
+      // Refresh data
       setTimeout(() => {
-        fetchFrequentRecipients()
-        fetchRecentTransfers()
-      }, 1500)
+        fetchFrequentRecipients();
+        fetchRecentTransfers();
+      }, 1500);
 
     } catch (err: any) {
-      const errorMsg = err?.response?.data?.error || 
-                      err?.response?.data?.detail || 
+      const errorMsg = err?.response?.data?.detail || 
+                      err?.response?.data?.error || 
                       err.message || 
-                      "Transfer failed. Please try again."
-      toast({ variant: "destructive", title: "Transfer Failed", description: errorMsg })
+                      "Transfer failed. Please try again.";
+      toast.error(errorMsg);
     } finally {
-      setIsProcessing(false)
+      setIsProcessing(false);
     }
-  }
+  };
 
   const resetForm = () => {
     setFormData({
@@ -196,14 +186,33 @@ export default function TransfersPage() {
       amount: "",
       description: "",
       bank: "",
-    })
-    setStep(1)
-    setIsSuccess(false)
+    });
+    setStep(1);
+    setIsSuccess(false);
+  };
+
+  // No accounts state
+  if (!hasAccounts) {
+    return (
+      <div className="flex flex-col items-center justify-center min-h-[60vh] text-center px-6">
+        <AlertCircle className="h-16 w-16 text-amber-500 mb-6" />
+        <h2 className="text-2xl font-bold text-foreground mb-3">No Accounts Found</h2>
+        <p className="text-muted-foreground mb-6 max-w-md">
+          You need to open at least one account before you can make transfers.
+        </p>
+        <LiquidGlassButton 
+          onClick={() => window.location.href = "/accounts"} 
+          className="flex items-center gap-2"
+        >
+          <Plus className="h-5 w-5" />
+          Open an Account Now
+        </LiquidGlassButton>
+      </div>
+    );
   }
 
   return (
     <div className="space-y-6">
-      {/* Header */}
       <div>
         <h1 className="text-2xl font-bold text-foreground">Transfer Money</h1>
         <p className="text-muted-foreground">Send money instantly to anyone, anywhere</p>
@@ -218,17 +227,17 @@ export default function TransfersPage() {
               <LiquidGlassCard
                 key={type.id}
                 className={cn(
-                  "p-4 text-center cursor-pointer transition-all",
+                  "p-4 text-center cursor-pointer transition-all hover:scale-[1.02]",
                   selectedType === type.id && "ring-2 ring-spartan-cyan bg-spartan-cyan/10"
                 )}
                 hover
                 onClick={() => {
-                  setSelectedType(type.id as TransferType)
-                  resetForm()
+                  setSelectedType(type.id as TransferType);
+                  resetForm();
                 }}
               >
                 <div className={cn(
-                  "mx-auto w-10 h-10 rounded-xl flex items-center justify-center mb-2",
+                  "mx-auto w-10 h-10 rounded-xl flex items-center justify-center mb-3",
                   selectedType === type.id ? "bg-spartan-cyan/20 text-spartan-cyan" : "bg-white/5 text-muted-foreground"
                 )}>
                   <type.icon className="h-5 w-5" />
@@ -364,9 +373,9 @@ export default function TransfersPage() {
                       <span className="text-muted-foreground">Transfer Fee</span>
                       <span className="font-semibold text-foreground">{formatCurrency(getTransferFee())}</span>
                     </div>
-                    <div className="border-t border-white/10 pt-4 flex justify-between">
-                      <span className="text-muted-foreground">Total</span>
-                      <span className="font-bold text-lg text-spartan-cyan">
+                    <div className="border-t border-white/10 pt-4 flex justify-between font-bold">
+                      <span className="text-foreground">Total</span>
+                      <span className="text-spartan-cyan">
                         {formatCurrency(Number(formData.amount) + getTransferFee())}
                       </span>
                     </div>
@@ -453,8 +462,8 @@ export default function TransfersPage() {
                     key={recipient.id}
                     className="w-full flex items-center gap-3 p-3 rounded-xl hover:bg-white/5 transition-colors text-left"
                     onClick={() => {
-                      updateField("recipient", recipient.account_number || "")
-                      setSelectedType("spartan")
+                      updateField("recipient", recipient.account_number || "");
+                      setSelectedType("spartan");
                     }}
                   >
                     <div className="w-10 h-10 rounded-full bg-gradient-to-br from-spartan-cyan to-spartan-purple flex items-center justify-center">
@@ -474,7 +483,7 @@ export default function TransfersPage() {
             </div>
           </LiquidGlassCard>
 
-          {/* Recent Transfers - Improved */}
+          {/* Recent Transfers */}
           <LiquidGlassCard className="p-4">
             <div className="flex items-center justify-between mb-4">
               <h3 className="font-semibold text-foreground">Recent Transfers</h3>
@@ -487,8 +496,8 @@ export default function TransfersPage() {
                 </div>
               ) : recentTransfers.length > 0 ? (
                 recentTransfers.map((transfer: any) => {
-                  const isOutgoing = transfer.amount < 0 || transfer.transaction_type === 'transfer_out'
-                  const absAmount = Math.abs(transfer.amount || 0)
+                  const isOutgoing = transfer.amount < 0 || transfer.transaction_type === 'transfer_out';
+                  const absAmount = Math.abs(transfer.amount || 0);
 
                   return (
                     <div key={transfer.id} className="flex items-center justify-between p-3 rounded-xl bg-white/5">
@@ -517,7 +526,7 @@ export default function TransfersPage() {
                         </span>
                       </div>
                     </div>
-                  )
+                  );
                 })
               ) : (
                 <p className="text-sm text-muted-foreground text-center py-8">
@@ -529,5 +538,5 @@ export default function TransfersPage() {
         </div>
       </div>
     </div>
-  )
+  );
 }
