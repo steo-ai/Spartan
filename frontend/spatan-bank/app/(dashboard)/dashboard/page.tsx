@@ -82,7 +82,7 @@ export default function DashboardPage() {
 
       const [accRes, txRes, cardRes] = await Promise.all([
         api.accounts.getAccounts().catch(() => ({ results: [] })),
-        api.transactions.getTransactions({ page_size: 5 }).catch(() => ({ results: [], count: 0 })),
+        api.transactions.getTransactions({ page_size: 100 }).catch(() => ({ results: [], count: 0 })),
         api.cards?.list?.()?.catch(() => ({ results: [] })),
       ])
 

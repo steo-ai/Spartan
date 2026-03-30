@@ -181,11 +181,7 @@ export default function LoansPage() {
       })
 
       setApplyModalOpen(false)
-      setPurpose("")
-      setAmount(50000)
-      setTenure(12)
-      setLoanType("personal")
-
+      resetApplyForm()
       await fetchLoans()
     } catch (err: any) {
       toast({
@@ -198,6 +194,13 @@ export default function LoansPage() {
     }
   }
 
+  const resetApplyForm = () => {
+    setPurpose("")
+    setAmount(50000)
+    setTenure(12)
+    setLoanType("personal")
+  }
+
   const openRepayModal = (loan: LoanApplication) => {
     if (loan.status !== "active") {
       toast({ variant: "destructive", description: "Only active loans can be repaid" })
@@ -205,8 +208,7 @@ export default function LoansPage() {
     }
 
     setSelectedLoan(loan)
-    const suggestedAmount = Math.ceil(loan.monthly_emi || 0)
-    setRepayAmount(suggestedAmount)
+    setRepayAmount(Math.ceil(loan.monthly_emi || 0))
 
     if (userAccounts.length > 0) {
       setRepaymentAccountId(userAccounts[0].id)
@@ -234,7 +236,7 @@ export default function LoansPage() {
       })
 
       setRepayModalOpen(false)
-      await fetchLoans()   // Refresh to show updated remaining balance
+      await fetchLoans()
     } catch (err: any) {
       toast({
         variant: "destructive",
@@ -259,8 +261,9 @@ export default function LoansPage() {
   }
 
   const shortenAccount = (accNumber: string): string => {
-    if (!accNumber || accNumber.length <= 12) return accNumber || "N/A"
-    return `${accNumber.slice(0, 8)}...${accNumber.slice(-6)}`
+    if (!accNumber) return "N/A"
+    if (accNumber.length <= 14) return accNumber
+    return `${accNumber.slice(0, 6)}...${accNumber.slice(-6)}`
   }
 
   if (loading) {
@@ -282,7 +285,7 @@ export default function LoansPage() {
           <p className="text-muted-foreground">Apply for loans and manage repayments</p>
         </div>
 
-        <div className="flex gap-3">
+        <div className="flex flex-col sm:flex-row gap-3 w-full sm:w-auto">
           <Button variant="outline" onClick={fetchLoans} className="gap-2">
             <RefreshCw className="h-4 w-4" />
             Refresh
@@ -299,7 +302,7 @@ export default function LoansPage() {
       </div>
 
       {/* Your Loan Applications */}
-      <LiquidGlassCard className="p-6">
+      <LiquidGlassCard className="p-5 md:p-6">
         <h3 className="font-semibold text-lg mb-6 flex items-center gap-2">
           <CreditCard className="h-5 w-5" /> Your Loan Applications
         </h3>
@@ -311,12 +314,11 @@ export default function LoansPage() {
             <p className="text-muted-foreground mt-2">Start by applying for your first loan</p>
           </div>
         ) : (
-          <div className="grid gap-6">
+          <div className="space-y-6">
             {applications.map((loan) => {
               const statusConfig = getStatusConfig(loan.status)
               const StatusIcon = statusConfig.icon
 
-              // Total Owed = Disbursed + Total Interest
               const totalOwed = (loan.amount_disbursed || loan.amount_requested) + loan.total_interest
               const remaining = loan.remaining_balance
 
@@ -325,64 +327,73 @@ export default function LoansPage() {
                   key={loan.id}
                   initial={{ opacity: 0, y: 10 }}
                   animate={{ opacity: 1, y: 0 }}
-                  className="p-6 rounded-2xl border bg-gradient-to-br from-white/5 to-transparent hover:border-primary/30 transition-all overflow-hidden"
+                  className="p-5 md:p-6 rounded-3xl border bg-gradient-to-br from-white/5 to-transparent hover:border-primary/30 transition-all overflow-hidden"
                 >
-                  <div className="flex flex-col lg:flex-row lg:items-start justify-between gap-6">
+                  <div className="flex flex-col lg:flex-row gap-6">
                     <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-4 mb-4">
+                      <div className="flex items-start gap-4 mb-6">
                         <div className="w-14 h-14 rounded-2xl bg-primary/10 flex items-center justify-center flex-shrink-0">
                           <Landmark className="h-7 w-7 text-primary" />
                         </div>
-                        <div className="min-w-0">
-                          <div className="flex items-center gap-3 flex-wrap">
+
+                        <div className="min-w-0 flex-1">
+                          <div className="flex flex-wrap items-center gap-3 mb-2">
                             <h4 className="text-xl font-semibold">Loan #{loan.id}</h4>
                             <div className={cn(
-                              "flex items-center gap-1.5 px-3 py-1 rounded-full text-sm font-medium whitespace-nowrap",
-                              `text-${statusConfig.color}-400 bg-${statusConfig.color}-950/50 border border-${statusConfig.color}-500/30`
+                              "flex items-center gap-1.5 px-3 py-1 rounded-full text-sm font-medium whitespace-nowrap flex-shrink-0",
+                              {
+                                "text-emerald-400 bg-emerald-950/50 border border-emerald-500/30": statusConfig.color === "emerald",
+                                "text-amber-400 bg-amber-950/50 border border-amber-500/30": statusConfig.color === "amber",
+                                "text-red-400 bg-red-950/50 border border-red-500/30": statusConfig.color === "red",
+                                "text-blue-400 bg-blue-950/50 border border-blue-500/30": statusConfig.color === "blue",
+                              }
                             )}>
                               <StatusIcon className="h-4 w-4" />
                               {statusConfig.text}
                             </div>
                           </div>
-                          <p className="text-sm text-muted-foreground truncate">
+                          <p className="text-sm text-muted-foreground">
                             Applied on {new Date(loan.applied_at).toLocaleDateString('en-KE')}
                           </p>
                         </div>
                       </div>
 
-                      <div className="grid grid-cols-2 sm:grid-cols-4 gap-x-6 gap-y-4 text-sm">
+                      <div className="grid grid-cols-2 md:grid-cols-4 gap-x-6 gap-y-5 text-sm">
                         <div>
-                          <p className="text-muted-foreground">Requested</p>
-                          <p className="font-semibold">KES {loan.amount_requested.toLocaleString()}</p>
+                          <p className="text-muted-foreground text-xs">Requested</p>
+                          <p className="font-semibold mt-0.5">KES {loan.amount_requested.toLocaleString()}</p>
                         </div>
                         <div>
-                          <p className="text-muted-foreground">Disbursed</p>
-                          <p className="font-semibold text-emerald-400">
+                          <p className="text-muted-foreground text-xs">Disbursed</p>
+                          <p className="font-semibold text-emerald-400 mt-0.5">
                             KES {(loan.amount_disbursed || 0).toLocaleString()}
                           </p>
                         </div>
                         <div>
-                          <p className="text-muted-foreground">Total Interest</p>
-                          <p className="font-semibold">KES {loan.total_interest.toLocaleString()}</p>
+                          <p className="text-muted-foreground text-xs">Total Interest</p>
+                          <p className="font-semibold mt-0.5">KES {loan.total_interest.toLocaleString()}</p>
                         </div>
                         <div>
-                          <p className="text-muted-foreground">Rate & Term</p>
-                          <p className="font-semibold">{loan.interest_rate}% • {loan.term_months} months</p>
+                          <p className="text-muted-foreground text-xs">Rate & Term</p>
+                          <p className="font-semibold mt-0.5">
+                            {loan.interest_rate}% • {loan.term_months} months
+                          </p>
                         </div>
                       </div>
                     </div>
 
-                    {/* Remaining Balance Section */}
-                    <div className="lg:text-right min-w-[240px] pt-2 flex-shrink-0">
-                      <p className="text-3xl font-bold text-primary">
-                        KES {remaining.toLocaleString()}
-                      </p>
-                      <p className="text-sm text-muted-foreground">
-                        Remaining of KES {totalOwed.toLocaleString()}
-                      </p>
+                    <div className="lg:w-72 xl:w-80 flex-shrink-0 lg:text-right">
+                      <div className="mb-5">
+                        <p className="text-3xl font-bold text-primary">
+                          KES {remaining.toLocaleString()}
+                        </p>
+                        <p className="text-sm text-muted-foreground mt-1">
+                          Remaining of KES {totalOwed.toLocaleString()}
+                        </p>
+                      </div>
 
                       {loan.status === "active" && loan.progress_percentage > 0 && (
-                        <div className="mt-4">
+                        <div className="mb-6">
                           <div className="flex justify-between text-xs mb-1.5">
                             <span>Repayment Progress</span>
                             <span>{loan.progress_percentage}%</span>
@@ -394,7 +405,7 @@ export default function LoansPage() {
                       {loan.status === "active" && (
                         <Button 
                           onClick={() => openRepayModal(loan)}
-                          className="mt-5 w-full"
+                          className="w-full"
                           size="lg"
                         >
                           Make Repayment
@@ -403,15 +414,19 @@ export default function LoansPage() {
 
                       {loan.status === "repaid" && (
                         <div className="mt-4 text-emerald-500 text-sm font-medium">
-                          ✓ Loan Fully Repaid – You can apply for a new loan
+                          ✓ Loan Fully Repaid
                         </div>
                       )}
                     </div>
                   </div>
 
-                  {/* Account Number */}
-                  <div className="mt-4 pt-4 border-t border-white/10 text-xs text-muted-foreground">
-                    Account: <span className="font-mono break-all">{shortenAccount(loan.account_number)}</span>
+                  <div className="mt-8 pt-6 border-t border-white/10">
+                    <p className="text-xs text-muted-foreground mb-2">Disbursed To Account</p>
+                    <div className="bg-white/5 border border-white/10 rounded-2xl p-4 overflow-hidden">
+                      <p className="font-mono text-sm md:text-base break-all leading-relaxed text-foreground/90 tracking-[0.5px]">
+                        {shortenAccount(loan.account_number)}
+                      </p>
+                    </div>
                   </div>
                 </motion.div>
               )
@@ -420,10 +435,10 @@ export default function LoansPage() {
         )}
       </LiquidGlassCard>
 
-      {/* Loan Products Section */}
+      {/* Available Loan Products */}
       <LiquidGlassCard className="p-6">
         <h3 className="font-semibold text-lg mb-6">Available Loan Products</h3>
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
           {loanTypes.map((type, i) => (
             <motion.div
               key={type.value}
@@ -434,7 +449,7 @@ export default function LoansPage() {
                 setLoanType(type.value)
                 setApplyModalOpen(true)
               }}
-              className="p-6 rounded-2xl border border-white/10 hover:border-primary/50 cursor-pointer transition-all group"
+              className="p-6 rounded-2xl border border-white/10 hover:border-primary/50 cursor-pointer transition-all group h-full"
             >
               <div className="text-right mb-4">
                 <span className="text-2xl font-bold text-primary">{type.rate}%</span>
@@ -446,112 +461,128 @@ export default function LoansPage() {
         </div>
       </LiquidGlassCard>
 
-      {/* Apply Modal */}
+      {/* FIXED Apply Modal - No Horizontal Scroll on Mobile */}
       <Dialog open={applyModalOpen} onOpenChange={setApplyModalOpen}>
-        <DialogContent className="sm:max-w-lg max-h-[90vh] overflow-y-auto">
-          <DialogHeader>
-            <DialogTitle>Apply for a Loan</DialogTitle>
-            <DialogDescription>Complete the form below to submit your application</DialogDescription>
-          </DialogHeader>
+        <DialogContent className="w-full max-w-[95vw] sm:max-w-lg max-h-[92vh] overflow-hidden p-0">
+          <div className="p-6 overflow-y-auto max-h-[92vh] overflow-x-hidden">
+            <DialogHeader className="mb-6">
+              <DialogTitle>Apply for a Loan</DialogTitle>
+              <DialogDescription>Complete the form below to submit your application</DialogDescription>
+            </DialogHeader>
 
-          <div className="space-y-6 py-4">
-            <div>
-              <Label>Disburse To Account</Label>
-              <Select 
-                value={selectedAccountId?.toString() || ""} 
-                onValueChange={(v) => setSelectedAccountId(Number(v))}
-              >
-                <SelectTrigger>
-                  <SelectValue placeholder="Select account for disbursement" />
-                </SelectTrigger>
-                <SelectContent>
-                  {userAccounts.map((acc) => (
-                    <SelectItem key={acc.id} value={acc.id.toString()}>
-                      {shortenAccount(acc.account_number)} — {acc.account_type} 
-                      (Balance: KES {Number(acc.balance || 0).toLocaleString()})
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-
-            <div>
-              <Label>Loan Type</Label>
-              <Select value={loanType} onValueChange={setLoanType}>
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {loanTypes.map(t => (
-                    <SelectItem key={t.value} value={t.value}>{t.label}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <div className="space-y-6">
               <div>
-                <Label>Loan Amount (KES)</Label>
-                <Slider 
-                  value={[amount]} 
-                  onValueChange={([v]) => setAmount(v)} 
-                  min={10000} 
-                  max={5000000} 
-                  step={5000} 
-                />
-                <div className="text-center font-semibold mt-2">KES {amount.toLocaleString()}</div>
+                <Label>Disburse To Account</Label>
+                <Select 
+                  value={selectedAccountId?.toString() || ""} 
+                  onValueChange={(v) => setSelectedAccountId(Number(v))}
+                >
+                  <SelectTrigger className="mt-1.5">
+                    <SelectValue placeholder="Select account for disbursement" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {userAccounts.map((acc) => (
+                      <SelectItem key={acc.id} value={acc.id.toString()}>
+                        {shortenAccount(acc.account_number)} — {acc.account_type} 
+                        (Balance: KES {Number(acc.balance || 0).toLocaleString()})
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
               </div>
 
               <div>
-                <Label>Tenure (Months)</Label>
-                <Slider 
-                  value={[tenure]} 
-                  onValueChange={([v]) => setTenure(v)} 
-                  min={6} 
-                  max={60} 
-                  step={1} 
+                <Label>Loan Type</Label>
+                <Select value={loanType} onValueChange={setLoanType}>
+                  <SelectTrigger className="mt-1.5">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {loanTypes.map(t => (
+                      <SelectItem key={t.value} value={t.value}>{t.label}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div className="grid grid-cols-1 gap-6">
+                <div>
+                  <Label>Loan Amount (KES)</Label>
+                  <Slider 
+                    value={[amount]} 
+                    onValueChange={([v]) => setAmount(v)} 
+                    min={10000} 
+                    max={5000000} 
+                    step={5000} 
+                    className="mt-3"
+                  />
+                  <div className="text-center font-semibold mt-3 text-lg">
+                    KES {amount.toLocaleString()}
+                  </div>
+                </div>
+
+                <div>
+                  <Label>Tenure (Months)</Label>
+                  <Slider 
+                    value={[tenure]} 
+                    onValueChange={([v]) => setTenure(v)} 
+                    min={6} 
+                    max={60} 
+                    step={1} 
+                    className="mt-3"
+                  />
+                  <div className="text-center font-semibold mt-3 text-lg">
+                    {tenure} months
+                  </div>
+                </div>
+              </div>
+
+              <div>
+                <Label>Purpose of Loan</Label>
+                <Textarea
+                  value={purpose}
+                  onChange={(e) => setPurpose(e.target.value)}
+                  placeholder="e.g. Business expansion, School fees, Medical emergency..."
+                  rows={3}
+                  className="mt-1.5 resize-y min-h-[80px]"
                 />
-                <div className="text-center font-semibold mt-2">{tenure} months</div>
               </div>
-            </div>
 
-            <div>
-              <Label>Purpose of Loan</Label>
-              <Textarea
-                value={purpose}
-                onChange={(e) => setPurpose(e.target.value)}
-                placeholder="e.g. Business expansion, School fees, Medical emergency..."
-                rows={3}
-              />
-            </div>
-
-            <div className="p-5 bg-white/5 rounded-xl border border-white/10">
-              <div className="flex items-center gap-2 mb-3">
-                <Calculator className="h-5 w-5" />
-                <span className="font-medium">Estimated Monthly Installment</span>
+              <div className="p-5 bg-white/5 rounded-xl border border-white/10">
+                <div className="flex items-center gap-2 mb-3">
+                  <Calculator className="h-5 w-5" />
+                  <span className="font-medium">Estimated Monthly Installment</span>
+                </div>
+                <p className="text-3xl font-bold text-primary">
+                  KES {Math.round(calculateMonthlyPayment(amount, tenure, getCurrentRate())).toLocaleString()}
+                </p>
+                <p className="text-xs text-muted-foreground mt-1">
+                  at {getCurrentRate()}% p.a. for {tenure} months
+                </p>
               </div>
-              <p className="text-3xl font-bold text-primary">
-                KES {Math.round(calculateMonthlyPayment(amount, tenure, getCurrentRate())).toLocaleString()}
-              </p>
-              <p className="text-xs text-muted-foreground mt-1">
-                at {getCurrentRate()}% p.a. for {tenure} months
-              </p>
-            </div>
 
-            <div className="flex justify-end gap-3 pt-4">
-              <Button variant="outline" onClick={() => setApplyModalOpen(false)}>Cancel</Button>
-              <Button 
-                onClick={handleApply} 
-                disabled={submitting || !purpose.trim() || !selectedAccountId}
-              >
-                {submitting ? "Submitting..." : "Submit Loan Application"}
-              </Button>
+              <div className="flex flex-col gap-3 pt-4">
+                <Button 
+                  variant="outline" 
+                  onClick={() => setApplyModalOpen(false)}
+                  className="w-full"
+                >
+                  Cancel
+                </Button>
+                <Button 
+                  onClick={handleApply} 
+                  disabled={submitting || !purpose.trim() || !selectedAccountId}
+                  className="w-full"
+                >
+                  {submitting ? "Submitting..." : "Submit Loan Application"}
+                </Button>
+              </div>
             </div>
           </div>
         </DialogContent>
       </Dialog>
 
-      {/* Repay Modal */}
+      {/* Repay Modal (unchanged) */}
       <Dialog open={repayModalOpen} onOpenChange={setRepayModalOpen}>
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
@@ -588,7 +619,7 @@ export default function LoansPage() {
                 value={repaymentAccountId?.toString() || ""} 
                 onValueChange={(v) => setRepaymentAccountId(Number(v))}
               >
-                <SelectTrigger>
+                <SelectTrigger className="mt-1.5">
                   <SelectValue placeholder="Select repayment account" />
                 </SelectTrigger>
                 <SelectContent>
@@ -617,10 +648,4 @@ export default function LoansPage() {
       </Dialog>
     </div>
   )
-}
-
-// Helper
-const shortenAccount = (accNumber: string): string => {
-  if (!accNumber || accNumber.length <= 12) return accNumber || "N/A"
-  return `${accNumber.slice(0, 8)}...${accNumber.slice(-6)}`
 }

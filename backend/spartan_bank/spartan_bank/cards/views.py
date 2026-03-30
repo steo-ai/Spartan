@@ -13,10 +13,21 @@ from .models import Card, CardTransaction
 from .serializers import CardSerializer, CardTransactionSerializer
 
 
-class RevealThrottle(UserRateThrottle):
-    """Custom throttle just for reveal action — prevents PIN brute-force"""
-    rate = '8/minute'  # 8 attempts per minute per user — adjust as needed
+# cards/views.py
 
+from rest_framework.throttling import UserRateThrottle
+
+class RevealThrottle(UserRateThrottle):
+    """Custom throttle for card reveal — more lenient + better scope"""
+    rate = '20/minute'           # Increased significantly
+    scope = 'card_reveal'        # Important: unique scope so it doesn't conflict with other throttles
+
+    def get_cache_key(self, request, view):
+        # Make throttle specific to this card + user (better UX)
+        if request.user.is_authenticated:
+            card_id = view.kwargs.get('pk')
+            return f"throttle:card_reveal:{request.user.id}:{card_id}"
+        return None
 
 class CardViewSet(viewsets.ModelViewSet):
     """
@@ -128,8 +139,12 @@ Spartan Bank Team
             return Response({"error": "PIN is required"}, status=400)
 
         if provided_pin != card.pin:
-            return Response({"error": "Invalid PIN"}, status=403)
+            return Response({
+                "error": "Invalid PIN",
+                "detail": "The PIN you entered is incorrect."
+            }, status=403)
 
+        # Success - reveal full details
         data = self.get_serializer(card).data
         data.update({
             'full_card_number': card.card_number,
@@ -137,9 +152,9 @@ Spartan Bank Team
         })
 
         return Response({
-            "message": "Card details revealed (do not share)",
+            "message": "Card details revealed successfully",
             "card": data,
-            "warning": "This information is sensitive — hide after use"
+            "warning": "This information is sensitive. Do not share it with anyone."
         })
 
     @action(detail=True, methods=['post'])

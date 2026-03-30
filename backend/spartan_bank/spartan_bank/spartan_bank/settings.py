@@ -73,6 +73,7 @@ INSTALLED_APPS = [
     # Third-party
     "rest_framework",
     "rest_framework.authtoken",
+    "rest_framework_simplejwt.token_blacklist",
     "corsheaders",
     "allauth",
     "allauth.account",
@@ -83,6 +84,7 @@ INSTALLED_APPS = [
     "bills",
     "cards",
     "notifications.apps.NotificationsConfig",
+    
 ]
 
 # ────────────────────────────────────────────────────────────────
@@ -196,8 +198,8 @@ REST_FRAMEWORK = {
 }
 
 SIMPLE_JWT = {
-    "ACCESS_TOKEN_LIFETIME": timedelta(hours=24),
-    "REFRESH_TOKEN_LIFETIME": timedelta(days=30),
+    "ACCESS_TOKEN_LIFETIME": timedelta(minutes=15),
+    "REFRESH_TOKEN_LIFETIME": timedelta(days=7),
     "ROTATE_REFRESH_TOKENS": True,
     "BLACKLIST_AFTER_ROTATION": True,
     "AUTH_HEADER_TYPES": ("Bearer",),
@@ -234,7 +236,7 @@ EMAIL_PORT = 587
 EMAIL_HOST_USER = config("EMAIL_HOST_USER", default="grandviewshopafrica@gmail.com")
 EMAIL_HOST_PASSWORD = config("EMAIL_HOST_PASSWORD")  # ← must come from .env
 EMAIL_USE_TLS = True
-DEFAULT_FROM_EMAIL = "Grandview <grandviewshopafrica@gmail.com>"
+DEFAULT_FROM_EMAIL = "Spartan Bank <grandviewshopafrica@gmail.com>"
 SERVER_EMAIL = DEFAULT_FROM_EMAIL
 ADMIN_EMAIL = config("ADMIN_EMAIL", default="grandviewshopafrica@gmail.com")
 

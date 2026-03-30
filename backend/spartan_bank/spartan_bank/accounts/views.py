@@ -26,14 +26,17 @@ import json
 import secrets
 import random
 import string
+import logging
+
 
 from .models import Account, Transaction, LoanApplication, UserProfile, TrustedDevice
 from .serializers import (
     AccountSerializer, TransactionSerializer,
-    LoanApplicationSerializer, RegisterSerializer, UserProfileSerializer
+    LoanApplicationSerializer, RegisterSerializer, UserProfileSerializer, BiometricLoginSerializer
 )
 
 
+logger = logging.getLogger(__name__)
 User = get_user_model()
 
 @csrf_exempt
@@ -113,13 +116,42 @@ def verify_otp_view(request):
         if profile.otp_code != otp:
             return JsonResponse({"detail": "Incorrect OTP"}, status=400)
 
+        # ====================== SUCCESSFUL VERIFICATION ======================
         profile.is_verified = True
         profile.otp_code = None
         profile.otp_created_at = None
         profile.save()
 
+        # Send Welcome Email after successful registration
+        send_mail(
+            subject="🎉 Welcome to Spartan Bank – Your Account is Ready!",
+            message=f"""
+Dear {user.first_name or 'Valued Customer'},
+
+Congratulations! Your Spartan Bank account has been successfully created and verified.
+
+You can now:
+• Log in to your account
+• Open Savings or Checking accounts
+• Apply for instant loans
+• Make secure transfers and payments
+
+Account Email: {user.email}
+
+We are excited to have you as part of the Spartan Bank family.
+
+Best regards,
+The Spartan Bank Team
+Secure • Reliable • Instant
+            """.strip(),
+            from_email=settings.DEFAULT_FROM_EMAIL,
+            recipient_list=[user.email],
+            fail_silently=False,
+        )
+
         return JsonResponse({
-            "message": "Email verified successfully. You can now log in."
+            "message": "Email verified successfully. Welcome to Spartan Bank!",
+            "email": user.email
         }, status=200)
 
     except User.DoesNotExist:
@@ -127,7 +159,6 @@ def verify_otp_view(request):
     except Exception as e:
         print("VERIFY OTP ERROR:", str(e))
         return JsonResponse({"detail": "Server error"}, status=500)
-
 
 @csrf_exempt
 @ratelimit(key='ip', rate='3/m', block=True)
@@ -297,15 +328,73 @@ class ProfileViewSet(viewsets.ModelViewSet):
     permission_classes = [IsAuthenticated]
 
     def get_queryset(self):
+        """Only allow users to access their own profile"""
         return UserProfile.objects.filter(user=self.request.user)
 
     @action(detail=False, methods=['get'], url_path='me')
     def me(self, request):
+        """Get current user's profile"""
         profile = request.user.userprofile
         serializer = UserProfileSerializer(profile, context={'request': request})
         return Response(serializer.data)
-    
 
+    @action(detail=False, methods=['post'], url_path='enable-biometric')
+    def enable_biometric(self, request):
+        """Enable Face ID / Fingerprint / Biometric login on current device"""
+        serializer = BiometricLoginSerializer(data=request.data)
+        if not serializer.is_valid():
+            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+        device_token = serializer.validated_data['device_token']
+        device_name = serializer.validated_data.get('device_name', 'User Device')
+        
+        # Safely get and validate biometric_type
+        biometric_type = request.data.get('biometric_type', 'fingerprint').lower().strip()
+        if biometric_type not in ['fingerprint', 'face_id', 'other']:
+            biometric_type = 'fingerprint'
+
+        try:
+            # Create or update trusted device
+            trusted_device, created = TrustedDevice.objects.get_or_create(
+                user=request.user,
+                token=device_token,
+                defaults={
+                    'device_name': device_name,
+                    'user_agent': request.META.get('HTTP_USER_AGENT', ''),
+                    'ip_address': request.META.get('REMOTE_ADDR'),
+                    'is_biometric': True,
+                    'biometric_type': biometric_type,
+                }
+            )
+
+            if not created:
+                trusted_device.is_biometric = True
+                trusted_device.biometric_type = biometric_type
+                trusted_device.device_name = device_name
+                trusted_device.user_agent = request.META.get('HTTP_USER_AGENT', trusted_device.user_agent)
+                trusted_device.ip_address = request.META.get('REMOTE_ADDR', trusted_device.ip_address)
+                trusted_device.save()
+
+            # Update profile
+            profile = request.user.userprofile
+            profile.biometric_enabled = True
+            profile.last_biometric_login = timezone.now()
+            profile.save(update_fields=['biometric_enabled', 'last_biometric_login'])
+
+            return Response({
+                "message": "Biometric login enabled successfully",
+                "device_token": device_token,
+                "device_name": device_name,
+                "biometric_type": biometric_type,
+                "is_new_device": created
+            }, status=status.HTTP_200_OK)
+
+        except Exception as e:
+            logger.error(f"Enable biometric error for user {request.user.email}: {e}", exc_info=True)
+            return Response({
+                "detail": "Failed to enable biometric login. Please try again."
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+        
 class AccountViewSet(viewsets.ModelViewSet):
     serializer_class = AccountSerializer
     permission_classes = [IsAuthenticated]
@@ -316,6 +405,8 @@ class AccountViewSet(viewsets.ModelViewSet):
 
     def perform_create(self, serializer):
         serializer.save(user=self.request.user)
+
+    # In accounts/views.py  (inside AccountViewSet class)
 
     @action(detail=False, methods=['post'], url_path='open_account')
     def open_account(self, request):
@@ -345,6 +436,7 @@ class AccountViewSet(viewsets.ModelViewSet):
                     is_active=True,
                 )
 
+                # Create opening transaction
                 Transaction.objects.create(
                     account=new_account,
                     amount=Decimal('0.00'),
@@ -354,15 +446,44 @@ class AccountViewSet(viewsets.ModelViewSet):
                     balance_after=new_account.balance,
                 )
 
+            # ==================== SEND SUCCESS EMAIL ====================
+            account_type_display = new_account.get_account_type_display()
+            
+            send_mail(
+                subject=f'Spartan Bank – Your {account_type_display} Account Created Successfully',
+                message=f"""
+Dear {request.user.first_name or request.user.email},
+
+Your new **{account_type_display} Account** has been successfully created!
+
+Account Details:
+• Account Type: {account_type_display}
+• Account Number: {new_account.account_number}
+• Status: Active
+• Date Created: {new_account.created_at.strftime('%Y-%m-%d %H:%M')}
+
+You can now start using your new account for deposits, transfers, and other banking services.
+
+Thank you for choosing Spartan Bank.
+
+Best regards,
+Spartan Bank Team
+                """.strip(),
+                from_email=settings.DEFAULT_FROM_EMAIL,
+                recipient_list=[request.user.email],
+                fail_silently=False,
+            )
+
             serializer = self.get_serializer(new_account)
             return Response({
-                "message": "Account created successfully",
+                "message": f"{account_type_display} account created successfully",
                 "account": serializer.data
             }, status=status.HTTP_201_CREATED)
 
         except Exception as exc:
+            print("Account creation error:", str(exc))
             return Response({"detail": f"Failed to create account: {str(exc)}"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
-
+        
     # Mini-statement, export-csv, export-pdf, and deprecated actions remain unchanged
     @action(detail=True, methods=['get'], url_path='mini-statement')
     def mini_statement(self, request, pk=None):
@@ -638,4 +759,50 @@ class LoanApplicationViewSet(viewsets.ModelViewSet):
             "status": application.status,
             "new_account_balance": float(repayment_account.balance),
             "total_repaid": float(application.total_repaid)
+        })
+@method_decorator(csrf_exempt, name='dispatch')
+@method_decorator(ratelimit(key='ip', rate='10/m', block=True), name='post')
+class BiometricLoginView(APIView):
+    permission_classes = [AllowAny]
+
+    def post(self, request):
+        serializer = BiometricLoginSerializer(data=request.data)
+        if not serializer.is_valid():
+            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+        device_token = serializer.validated_data['device_token']
+        device_name = serializer.validated_data.get('device_name', 'Biometric Device')
+
+        try:
+            trusted_device = TrustedDevice.objects.select_related('user').get(
+                token=device_token,
+                is_biometric=True  # ← now enforced at query level
+            )
+        except TrustedDevice.DoesNotExist:
+            return Response({
+                "detail": "Biometric not enabled on this device. Please enable it in Settings first."
+            }, status=status.HTTP_403_FORBIDDEN)
+
+        user = trusted_device.user
+        profile = user.userprofile
+
+        # Update timestamps
+        profile.last_biometric_login = timezone.now()
+        profile.save(update_fields=['last_biometric_login'])
+        trusted_device.save(update_fields=['last_used'])
+
+        refresh = RefreshToken.for_user(user)
+
+        return Response({
+            "message": "Biometric login successful",
+            "access": str(refresh.access_token),
+            "refresh": str(refresh),
+            "user": {
+                "id": user.id,
+                "email": user.email,
+                "first_name": user.first_name,
+                "last_name": user.last_name,
+            },
+            "device_name": trusted_device.device_name,
+            "biometric_type": trusted_device.biometric_type
         })

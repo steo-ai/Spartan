@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <title>Spartan Bank Bill Payment</title>
+    <style>
+        body { font-family: Arial, sans-serif; background: #f4f4f4; padding: 20px; }
+        .container { max-width: 600px; margin: 0 auto; background: white; padding: 30px; border-radius: 8px; }
+        .header { text-align: center; color: #1e40af; }
+        .amount { font-size: 28px; font-weight: bold; color: #dc2626; }
+        .status-completed { color: #15803d; }
+        .status-failed { color: #dc2626; }
+        table { width: 100%; border-collapse: collapse; margin: 20px 0; }
+        td { padding: 12px 10px; border-bottom: 1px solid #eee; }
+        .label { font-weight: bold; color: #374151; width: 40%; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h2>Spartan Bank</h2>
+            <h3>{{ type }} Notification</h3>
+        </div>
+
+        <p>Dear {{ user.get_full_name|default:user.email }},</p>
+
+        <p>Your {{ type|lower }} has been processed:</p>
+
+        <table>
+            <tr><td class="label">Reference:</td><td><strong>{{ reference }}</strong></td></tr>
+            <tr><td class="label">Type:</td><td>{{ type }}</td></tr>
+            <tr><td class="label">Amount Debited:</td><td class="amount">{{ amount }}</td></tr>
+            <tr><td class="label">Status:</td>
+                <td class="{% if status == 'Completed' %}status-completed{% else %}status-failed{% endif %}">
+                    <strong>{{ status }}</strong>
+                </td>
+            </tr>
+            {% if is_airtime and phone_number %}
+            <tr><td class="label">Phone Number:</td><td>{{ phone_number }}</td></tr>
+            {% endif %}
+            {% if external_reference %}
+            <tr><td class="label">External Ref:</td><td>{{ external_reference }}</td></tr>
+            {% endif %}
+            <tr><td class="label">Description:</td><td>{{ description }}</td></tr>
+            <tr><td class="label">Date:</td><td>{{ date|date:"d M Y, H:i" }}</td></tr>
+        </table>
+
+        <p>If you did not make this transaction or have any concerns, please contact support immediately.</p>
+
+        <p>Thank you for using Spartan Bank.</p>
+        <p style="color: #6b7280; font-size: 0.9em;">This is an automated notification.</p>
+    </div>
+</body>
+</html>

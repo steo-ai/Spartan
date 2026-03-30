@@ -2,8 +2,8 @@
 
 import { UserProfile, Account, Card, Transaction } from "@/lib/types"
 
-//const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000/api"
-const API_BASE = process.env.NEXT_PUBLIC_API_URL || "https://spartan-swjb.onrender.com/api"
+const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000/api"
+//const API_BASE = process.env.NEXT_PUBLIC_API_URL || "https://spartan-swjb.onrender.com/api"
 
 // ─── Generic Fetch Wrapper ───────────────────────────────────────────────────────
 async function apiFetch<T>(
@@ -67,11 +67,18 @@ export interface Paginated<T> {
   previous: string | null
   results: T[]
 }
-
 // ─── AUTH ────────────────────────────────────────────────────────────────────────
 export const authApi = {
   login: (email: string, password: string) =>
-    apiFetch<{ access: string; refresh: string; device_token?: string }>("/accounts/login/", {
+    apiFetch<{
+      access?: string;
+      refresh?: string;
+      device_token?: string;
+      challenge?: string;
+      question?: string;
+      email?: string;
+      message?: string;
+    }>("/accounts/login/", {
       method: "POST",
       body: JSON.stringify({ email, password }),
       noAuth: true,
@@ -82,13 +89,75 @@ export const authApi = {
     securityAnswer: string,
     device_name: string = "Web Browser"
   ) =>
-    apiFetch<{ access: string; refresh: string; device_token: string }>("/accounts/login/verify-question/", {
+    apiFetch<{
+      access: string;
+      refresh: string;
+      device_token: string;
+      message: string;
+      user?: {
+        id: number;
+        email: string;
+        first_name: string;
+        last_name: string;
+      };
+    }>("/accounts/login/verify-question/", {
       method: "POST",
-      body: JSON.stringify({ email, answer: securityAnswer, device_name }),
+      body: JSON.stringify({ 
+        email, 
+        answer: securityAnswer, 
+        device_name 
+      }),
       noAuth: true,
     }),
 
-  logout: () => apiFetch("/accounts/logout/", { method: "POST" }),
+  // Biometric Login
+  biometricLogin: (device_token: string, device_name: string = "Biometric Device") =>
+    apiFetch<{
+      access: string;
+      refresh: string;
+      message: string;
+      user: {
+        id: number;
+        email: string;
+        first_name: string;
+        last_name: string;
+      };
+      device_name?: string;
+      biometric_type?: string;
+    }>("/accounts/login/biometric/", {
+      method: "POST",
+      body: JSON.stringify({ 
+        device_token, 
+        device_name 
+      }),
+      noAuth: true,
+    }),
+
+// In api.ts → inside authApi object
+
+  // Updated enableBiometric - accepts explicit biometric_type
+  enableBiometric: (device_token: string, device_name: string, biometric_type: "fingerprint" | "face_id") =>
+    apiFetch<{
+      message: string;
+      device_token?: string;
+      biometric_type?: string;
+      is_new_device?: boolean;
+    }>("/accounts/profiles/enable-biometric/", {
+      method: "POST",
+      body: JSON.stringify({ 
+        device_token, 
+        device_name,
+        biometric_type: biometric_type   // ← Send exactly what user chose
+      }),
+    }),
+    
+  // Logout
+  logout: (refreshToken?: string) => 
+    apiFetch<{ detail?: string; message?: string }>("/accounts/logout/", { 
+      method: "POST",
+      body: refreshToken ? JSON.stringify({ refresh: refreshToken }) : undefined,
+      noAuth: true,   // usually logout doesn't need auth header
+    }),
 
   register: (data: {
     email: string
@@ -121,7 +190,6 @@ export const authApi = {
       noAuth: true,
     }),
 }
-
 // ─── ACCOUNTS ────────────────────────────────────────────────────────────────────
 export const accountsApi = {
   getCurrentUser: () => apiFetch<UserProfile>("/accounts/profiles/me/"),
@@ -131,15 +199,17 @@ export const accountsApi = {
   getAccount: (accountId: number) => apiFetch<Account>(`/accounts/accounts/${accountId}/`),
 
   getMiniStatement: (accountId: number, days = 30, limit = 50) =>
-    apiFetch<Paginated<Transaction>>(
+    apiFetch<any>(
       `/accounts/accounts/${accountId}/mini-statement/?days=${days}&limit=${limit}`
     ),
 
   openAccount: (payload: { account_type: "savings" | "checking" | "loan" }) =>
-    apiFetch<Account>("/accounts/accounts/", {
+    apiFetch<Account>("/accounts/accounts/open_account/", {   // ← Fixed: Use the correct action endpoint
       method: "POST",
       body: JSON.stringify(payload),
     }),
+
+  
 }
 
 // ─── TRANSACTIONS ────────────────────────────────────────────────────────────────
@@ -206,7 +276,7 @@ export const cardsApi = {
       body: JSON.stringify(payload),
     }),
 
-  // Per-card transactions (already exists)
+  // Per-card transactions
   getCardTransactions: (cardId: number | string, params: { limit?: number; offset?: number } = {}) => {
     const query = new URLSearchParams()
     if (params.limit) query.set("limit", params.limit.toString())
@@ -216,23 +286,17 @@ export const cardsApi = {
     )
   },
 
-  // ← NEW: Global card transactions (what your page is calling)
-getAllCardTransactions: (params: { limit?: number; offset?: number } = {}) => {
-  let url = "/card-transactions/"
+  // ←←← NEW: Global card transactions (ALL transactions across user's cards)
+  // This is what your frontend was trying to call
+  getAllCardTransactions: (params: { limit?: number } = {}) => {
+    const query = new URLSearchParams()
+    if (params.limit) query.set("limit", params.limit.toString())
 
-  const query = new URLSearchParams()
-  if (params.limit !== undefined) query.set("limit", String(params.limit))
-  if (params.offset !== undefined) query.set("offset", String(params.offset))
-
-  if (query.toString()) {
-    url += `?${query.toString()}`
-  }
-
-  return apiFetch<{ count: number; results: CardTransaction[] }>(url)
-},
-
+    return apiFetch<Paginated<CardTransaction>>(
+      `/cards/card-transactions/?${query.toString()}`
+    )
+  },
 }
-
 // ─── PAYMENTS / TRANSFERS API ───────────────────────────────────────────────────
 const normalizePhone = (phone: string): string => {
   let cleaned = phone.replace(/\D/g, "");

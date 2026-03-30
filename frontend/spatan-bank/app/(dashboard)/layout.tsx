@@ -12,33 +12,40 @@ export default function DashboardLayout({
   const [showMobileSidebar, setShowMobileSidebar] = useState(false)
 
   return (
-    <div className="flex flex-col h-screen bg-background">
+    <div className="flex flex-col h-screen bg-background overflow-hidden">
       {/* Top Navigation */}
-      <TopNavbar showMobileSidebar={showMobileSidebar} setShowMobileSidebar={setShowMobileSidebar} />
+      <TopNavbar 
+        showMobileSidebar={showMobileSidebar} 
+        setShowMobileSidebar={setShowMobileSidebar} 
+      />
 
       {/* Main Layout Container */}
       <div className="flex flex-1 overflow-hidden">
         {/* Desktop Sidebar */}
         <AppSidebar />
 
-        {/* Mobile Sidebar - Slides from left */}
+        {/* Mobile Sidebar Overlay + Sidebar */}
         {showMobileSidebar && (
           <>
-            {/* Translucent Overlay - Professional dimming effect */}
             <div
-              className="fixed inset-0 z-30 bg-black/40 backdrop-blur-sm md:hidden"
+              className="fixed inset-0 z-30 bg-black/60 backdrop-blur-sm md:hidden"
               onClick={() => setShowMobileSidebar(false)}
             />
-            {/* Mobile Sidebar */}
-            <div className="fixed left-0 top-16 bottom-20 w-64 z-40 md:hidden animate-in slide-in-from-left duration-300 overflow-y-auto">
+            <div className="fixed left-0 top-16 bottom-20 w-72 z-40 md:hidden animate-in slide-in-from-left duration-300 overflow-y-auto bg-background border-r border-white/10">
               <AppSidebar isMobile onClose={() => setShowMobileSidebar(false)} />
             </div>
           </>
         )}
 
         {/* Main Content Area */}
-        <main className={`flex-1 overflow-y-auto md:ml-0 mb-20 md:mb-0 w-full transition-all duration-300 ${showMobileSidebar ? "opacity-50 pointer-events-none md:opacity-100 md:pointer-events-auto" : "opacity-100"}`}>
-          <div className="p-4 md:p-6">
+        <main 
+          className={`
+            flex-1 overflow-y-auto w-full transition-all duration-300 
+            md:ml-0 pb-20 md:pb-0
+            ${showMobileSidebar ? "md:opacity-100 md:pointer-events-auto" : ""}
+          `}
+        >
+          <div className="p-4 sm:p-5 md:p-6 lg:p-8 max-w-7xl mx-auto">
             {children}
           </div>
         </main>

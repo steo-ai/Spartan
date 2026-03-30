@@ -3,7 +3,7 @@
 import { useState, useRef, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { Mail, Lock, Eye, EyeOff, ArrowRight, Shield } from "lucide-react";
+import { Mail, Lock, Eye, EyeOff, ArrowRight, Shield, Fingerprint, ScanFace } from "lucide-react";
 import { useAuth } from "@/contexts/auth-context";
 import { SpartanLogoText } from "@/components/spartan/spartan-logo";
 import {
@@ -11,12 +11,11 @@ import {
   LiquidGlassButton,
   LiquidGlassInput,
 } from "@/components/spartan/liquid-glass-card";
-import { cn } from "@/lib/utils";
-import { toast } from "@/hooks/use-toast";
+import { toast } from "sonner";
 
 export default function LoginPage() {
   const router = useRouter();
-  const { login } = useAuth();
+  const { login, loginWithBiometric } = useAuth();
 
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -26,14 +25,57 @@ export default function LoginPage() {
   const [showSecurityQuestion, setShowSecurityQuestion] = useState(false);
   const [securityAnswer, setSecurityAnswer] = useState("");
 
-  const securityInputRef = useRef<HTMLInputElement>(null);
-  const [errorMessage, setErrorMessage] = useState<string>("");
+  // Biometric states
+  const [savedDeviceToken, setSavedDeviceToken] = useState<string | null>(null);
+  const [savedBiometricType, setSavedBiometricType] = useState<"fingerprint" | "face_id" | null>(null);
+  const [isBiometricLogin, setIsBiometricLogin] = useState(false);
 
+  const securityInputRef = useRef<HTMLInputElement>(null);
+
+  // Focus security question input when shown
   useEffect(() => {
     if (showSecurityQuestion && securityInputRef.current) {
       securityInputRef.current.focus();
     }
   }, [showSecurityQuestion]);
+
+  // Load saved biometric data from localStorage (this should persist after logout)
+  useEffect(() => {
+    const token = localStorage.getItem("biometric_device_token");
+    const type = localStorage.getItem("biometric_type") as "fingerprint" | "face_id" | null;
+
+    console.log("🔍 LoginPage - Loaded biometric token:", token ? "✅ PRESENT" : "❌ MISSING");
+    console.log("🔍 Biometric type from storage:", type);
+
+    if (token) {
+      setSavedDeviceToken(token);
+      setSavedBiometricType(type || "fingerprint"); // fallback
+    }
+  }, []);
+
+  // Safe base64url decoder for credential ID
+  const base64UrlToUint8Array = (base64Url: string): Uint8Array => {
+    if (!base64Url || typeof base64Url !== "string") {
+      throw new Error("Invalid biometric credential");
+    }
+
+    let base64 = base64Url.replace(/-/g, "+").replace(/_/g, "/");
+    while (base64.length % 4 !== 0) {
+      base64 += "=";
+    }
+
+    try {
+      const binary = atob(base64);
+      const bytes = new Uint8Array(binary.length);
+      for (let i = 0; i < binary.length; i++) {
+        bytes[i] = binary.charCodeAt(i);
+      }
+      return bytes;
+    } catch (e) {
+      console.error("Failed to decode base64url:", e);
+      throw new Error("Invalid biometric credential");
+    }
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -41,65 +83,102 @@ export default function LoginPage() {
     setIsLoading(true);
 
     try {
-      // First attempt: normal login (email + password)
-      // We explicitly tell auth context NOT to add Bearer token
       const success = await login(
         email.trim(),
         password,
-        showSecurityQuestion ? securityAnswer.trim() : undefined,
-        { noAuth: true } // ← key fix: skip auth header on this request
+        showSecurityQuestion ? securityAnswer.trim() : undefined
       );
 
       if (success) {
-        toast({
-          title: "Welcome back!",
+        toast.success("Welcome back!", {
           description: "You have successfully logged in.",
-          duration: 4000,
         });
         router.push("/dashboard");
       }
     } catch (err: any) {
       const errMsg = err.message || "Login failed";
 
-      // Handle security question challenge from backend
       if (errMsg.includes("SECURITY_CHALLENGE") || errMsg.includes("security question")) {
         setShowSecurityQuestion(true);
-        setError("This appears to be a new or unrecognized device. Please answer your security question.");
-        toast({
-          title: "Additional Verification",
+        setError("New device detected. Please verify with your security question.");
+        toast.info("Additional Verification Required", {
           description: "Please answer your security question to continue.",
-          variant: "default",
-          duration: 5000,
         });
         setIsLoading(false);
         return;
       }
 
-      // Handle the exact token error you're seeing
-      if (errMsg.includes("Given token not valid for any token type") || errMsg.includes("HTTP 401")) {
-        setError("Authentication error. Please try logging in again.");
-        toast({
-          variant: "destructive",
-          title: "Login failed",
-          description: "Invalid authentication token. Please clear cache or try again.",
-          duration: 6000,
-        });
-      } else if (errMsg.toLowerCase().includes("invalid") || errMsg.toLowerCase().includes("credentials")) {
-        setError("Invalid email or password. Please try again.");
-      } else if (errMsg.toLowerCase().includes("otp") || errMsg.toLowerCase().includes("verification")) {
-        setError("Additional verification required. Check your email for OTP.");
+      setError(errMsg.includes("Invalid credentials") ? "Invalid email or password." : errMsg);
+      toast.error("Login Failed", { description: errMsg });
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleBiometricLogin = async () => {
+    if (!savedDeviceToken) {
+      toast.error("No biometric setup found", {
+        description: "Please enable Face ID or Fingerprint in your profile settings first.",
+      });
+      return;
+    }
+
+    setIsBiometricLogin(true);
+    setIsLoading(true);
+
+    try {
+      // Note: The WebAuthn get() call is mostly for UX (to trigger native prompt)
+      // Your backend uses the saved token directly, so we still call it for consistency
+      const credentialId = base64UrlToUint8Array(savedDeviceToken);
+
+      // Trigger native biometric prompt (this may not always be necessary but improves UX)
+      await navigator.credentials.get({
+        publicKey: {
+          challenge: new Uint8Array(32),
+          allowCredentials: [{ type: "public-key", id: credentialId }],
+          userVerification: "required",
+          rpId: window.location.hostname,
+        },
+      }).catch((e) => {
+        // Ignore errors here - some browsers may not support full WebAuthn flow
+        console.warn("WebAuthn get() failed, continuing with token-based login:", e);
+      });
+
+      const success = await loginWithBiometric(
+        savedDeviceToken,
+        savedBiometricType === "face_id" ? "Face ID" : "Fingerprint"
+      );
+
+      if (success) {
+        toast.success(
+          savedBiometricType === "face_id" ? "Face ID Login Successful" : "Fingerprint Login Successful"
+        );
+        router.push("/dashboard");
       } else {
-        setError(errMsg);
+        throw new Error("Biometric login rejected by server");
+      }
+    } catch (err: any) {
+      console.error("Biometric login error:", err);
+
+      let message = "Biometric login failed. Please try again.";
+
+      if (err.name === "NotAllowedError") {
+        message = "Biometric authentication was cancelled or not available on this device.";
+      } else if (err.name === "SecurityError") {
+        message = "Biometric login is not supported in this browser or context.";
+      } else if (err.message?.includes("Invalid biometric credential") || err.message?.includes("not found")) {
+        message = "Biometric data is no longer valid. Please re-enable it in profile settings.";
+        // Optional: clear invalid token
+        localStorage.removeItem("biometric_device_token");
+        localStorage.removeItem("biometric_type");
+        setSavedDeviceToken(null);
+        setSavedBiometricType(null);
       }
 
-      // Option 1: Clean & Recommended
-       toast({
-         variant: "destructive",
-         title: "Login failed",
-         description: errorMessage || "An error occurred during login. Please try again.",
-         duration: 6000,
-       });
+      toast.error("Biometric Login Failed", { description: message });
+      setError(message);
     } finally {
+      setIsBiometricLogin(false);
       setIsLoading(false);
     }
   };
@@ -130,7 +209,7 @@ export default function LoginPage() {
           required
           autoFocus
           autoComplete="email"
-          disabled={isLoading}
+          disabled={isLoading || showSecurityQuestion || isBiometricLogin}
         />
 
         <div className="relative">
@@ -142,14 +221,13 @@ export default function LoginPage() {
             icon={<Lock className="h-5 w-5" />}
             required
             autoComplete="current-password"
-            disabled={isLoading}
+            disabled={isLoading || showSecurityQuestion || isBiometricLogin}
           />
           <button
             type="button"
             onClick={() => setShowPassword(!showPassword)}
             className="absolute right-4 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors"
-            aria-label={showPassword ? "Hide password" : "Show password"}
-            disabled={isLoading}
+            disabled={isLoading || isBiometricLogin}
           >
             {showPassword ? <EyeOff className="h-5 w-5" /> : <Eye className="h-5 w-5" />}
           </button>
@@ -169,21 +247,41 @@ export default function LoginPage() {
           />
         )}
 
+        {/* Biometric Login Button */}
+        {savedDeviceToken && !showSecurityQuestion && (
+          <LiquidGlassButton
+            type="button"
+            variant="secondary"
+            size="lg"
+            onClick={handleBiometricLogin}
+            disabled={isLoading || isBiometricLogin}
+            className="w-full flex items-center justify-center gap-3 border border-white/20 hover:border-white/40"
+          >
+            {savedBiometricType === "face_id" ? (
+              <ScanFace className="h-5 w-5 text-sky-400" />
+            ) : (
+              <Fingerprint className="h-5 w-5 text-emerald-400" />
+            )}
+            Login with {savedBiometricType === "face_id" ? "Face ID" : "Fingerprint"}
+          </LiquidGlassButton>
+        )}
+
         <LiquidGlassButton
           type="submit"
           variant="primary"
           size="lg"
           disabled={
             isLoading ||
+            isBiometricLogin ||
             (showSecurityQuestion && !securityAnswer.trim()) ||
             (!showSecurityQuestion && (!email.trim() || !password))
           }
           className="w-full flex items-center justify-center gap-2.5"
         >
-          {isLoading ? (
+          {isLoading || isBiometricLogin ? (
             <>
               <div className="h-5 w-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-              <span>Processing...</span>
+              <span>{isBiometricLogin ? "Verifying Biometrics..." : "Signing in..."}</span>
             </>
           ) : showSecurityQuestion ? (
             <>

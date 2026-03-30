@@ -2,7 +2,7 @@
 
 import { cn } from "@/lib/utils"
 import { type ReactNode, forwardRef, InputHTMLAttributes, MouseEvent, ElementType } from "react"
-import { Slot } from "@radix-ui/react-slot"   // ← Add this import
+import { Slot } from "@radix-ui/react-slot"
 
 // ─── LiquidGlassCard ─────────────────────────────────────────────────────
 interface LiquidGlassCardProps {
@@ -34,11 +34,28 @@ export function LiquidGlassCard({
     <div
       onClick={onClick}
       className={cn(
-        "liquid-glass relative overflow-hidden rounded-3xl p-6 transition-all duration-300",
+        // Base glass card styles - Responsive padding & radius
+        "liquid-glass relative overflow-hidden rounded-2xl sm:rounded-3xl",
+        "p-4 sm:p-5 md:p-6",                    // Smaller padding on mobile
+        "transition-all duration-300",
+
+        // Variant styles
         variantClasses[variant],
+
+        // Glow effect - subtler on mobile
         glow && "liquid-glass-glow",
-        hover && "liquid-ripple cursor-pointer hover:scale-[1.02] hover:shadow-2xl active:scale-[0.985]",
-        onClick && "cursor-pointer",
+        glow && "sm:liquid-glass-glow",         // Stronger glow only on larger screens
+
+        // Hover effects - disabled/reduced on mobile for better UX
+        hover && "hover:scale-[1.02] active:scale-[0.985] sm:hover:scale-[1.02]",
+        hover && "cursor-pointer",
+
+        // Clickable state
+        onClick && "cursor-pointer active:scale-[0.985]",
+
+        // Extra polish for small screens
+        "min-h-[80px] sm:min-h-0",              // Prevents cards from being too tall on very small screens
+
         className
       )}
     >
@@ -47,7 +64,7 @@ export function LiquidGlassCard({
   )
 }
 
-// ─── LiquidGlassButton (UPDATED with asChild support) ─────────────────────
+// ─── LiquidGlassButton (Improved responsiveness) ─────────────────────
 interface LiquidGlassButtonProps {
   children: ReactNode
   className?: string
@@ -56,8 +73,8 @@ interface LiquidGlassButtonProps {
   disabled?: boolean
   onClick?: (e: MouseEvent<HTMLButtonElement>) => void
   type?: "button" | "submit" | "reset"
-  asChild?: boolean          // ← Added
-  as?: ElementType           // Optional: allow custom element
+  asChild?: boolean
+  as?: ElementType
 }
 
 export const LiquidGlassButton = forwardRef<
@@ -72,26 +89,27 @@ export const LiquidGlassButton = forwardRef<
   onClick,
   type = "button",
   asChild = false,
-  as: Component = "button",   // default to button
+  as: Component = "button",
   ...props
 }, ref) => {
   const variantClasses = {
-    primary: "bg-gradient-to-r from-spartan-cyan to-spartan-purple text-white hover:opacity-90",
-    secondary: "liquid-glass hover:bg-white/10",
-    ghost: "hover:bg-white/5",
+    primary: "bg-gradient-to-r from-spartan-cyan to-spartan-purple text-white hover:opacity-90 active:opacity-95",
+    secondary: "liquid-glass hover:bg-white/10 active:bg-white/15",
+    ghost: "hover:bg-white/5 active:bg-white/10",
     danger: "bg-gradient-to-r from-spartan-error to-red-600 text-white hover:opacity-90",
   }
 
   const sizeClasses = {
-    sm: "px-3 py-1.5 text-sm",
-    md: "px-4 py-2 text-base",
-    lg: "px-6 py-3 text-lg",
+    sm: "px-4 py-2 text-sm",
+    md: "px-5 py-2.5 text-base",
+    lg: "px-6 py-3.5 text-base sm:text-lg",
   }
 
   const baseClasses = cn(
-    "liquid-ripple relative rounded-xl font-medium transition-all duration-300",
-    "focus:outline-none focus:ring-2 focus:ring-spartan-cyan/50",
-    "disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100",
+    "liquid-ripple relative rounded-2xl font-medium transition-all duration-300",
+    "focus:outline-none focus:ring-2 focus:ring-spartan-cyan/50 focus:ring-offset-2 focus:ring-offset-background",
+    "disabled:opacity-50 disabled:cursor-not-allowed",
+    "active:scale-[0.97] sm:active:scale-[0.985]",   // Better touch feedback on mobile
     variantClasses[variant],
     sizeClasses[size],
     className
@@ -142,11 +160,6 @@ export const LiquidGlassInput = forwardRef<HTMLInputElement, LiquidGlassInputPro
       className,
       icon,
       disabled = false,
-      name,
-      required = false,
-      maxLength,
-      autoFocus,
-      autoComplete,
       ...props
     },
     ref
@@ -165,14 +178,10 @@ export const LiquidGlassInput = forwardRef<HTMLInputElement, LiquidGlassInputPro
           value={value}
           onChange={onChange}
           disabled={disabled}
-          name={name}
-          required={required}
-          maxLength={maxLength}
-          autoFocus={autoFocus}
-          autoComplete={autoComplete}
           {...props}
           className={cn(
-            "liquid-glass w-full rounded-xl border-0 bg-white/5 px-4 py-3",
+            "liquid-glass w-full rounded-2xl border-0 bg-white/5",
+            "px-4 py-3.5 text-base",                    // Better padding & text size
             "text-foreground placeholder:text-muted-foreground",
             "focus:outline-none focus:ring-2 focus:ring-spartan-cyan/50",
             "disabled:opacity-50 disabled:cursor-not-allowed",
@@ -220,12 +229,12 @@ export function LiquidGlassSelect({
         onChange={(e) => onChange?.(e.target.value)}
         disabled={disabled}
         className={cn(
-          "liquid-glass w-full rounded-xl border-0 bg-white/5 px-4 py-3",
+          "liquid-glass w-full rounded-2xl border-0 bg-white/5",
+          "px-4 py-3.5 text-base appearance-none cursor-pointer",
           "text-foreground",
           "focus:outline-none focus:ring-2 focus:ring-spartan-cyan/50",
           "disabled:opacity-50 disabled:cursor-not-allowed",
           "transition-all duration-300",
-          "appearance-none cursor-pointer",
           icon && "pl-12",
           className
         )}

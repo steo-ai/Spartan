@@ -8,7 +8,6 @@ import {
   ArrowUpRight,
   ArrowLeftRight,
   Receipt,
-  CreditCard,
   CheckCircle,
   Loader2,
   AlertCircle,
@@ -137,7 +136,7 @@ export function QuickActionModal({
     onClose()
   }
 
-  // ====================== DEPOSIT POLLING ======================
+  // Deposit polling
   useEffect(() => {
     let interval: NodeJS.Timeout | null = null
 
@@ -147,15 +146,10 @@ export function QuickActionModal({
           const response = await api.payments.checkDepositStatus(transactionId)
           const status = response?.status || response?.data?.status || "pending"
 
-          console.log("Polling deposit status:", status)
-
           if (status === "completed" || status === "mpesa_confirmed") {
             clearInterval(interval!)
             setStep("success")
-            toast({ 
-              title: "Payment Confirmed!", 
-              description: "Funds have been credited to your account." 
-            })
+            toast({ title: "Payment Confirmed!", description: "Funds have been credited to your account." })
             refreshUser?.()
           } else if (status === "failed") {
             clearInterval(interval!)
@@ -201,7 +195,6 @@ export function QuickActionModal({
     setStep("confirm")
   }
 
-  // ====================== handleFinalSubmit with delay for withdrawal ======================
   const handleFinalSubmit = async () => {
     setIsProcessing(true)
     setErrorMessage(null)
@@ -212,20 +205,9 @@ export function QuickActionModal({
 
       if (actionType === "deposit") {
         const response = await api.payments.deposit(accId, amt, phoneNumber, description)
+        const transferId = response?.transfer_id || response?.id || response?.data?.id || response?.transferId
 
-        console.log("✅ Full Deposit Response from backend:", response)
-
-        const transferId = 
-          response?.transfer_id || 
-          response?.id || 
-          response?.transferId ||
-          response?.data?.transfer_id ||
-          response?.data?.id
-
-        if (!transferId) {
-          console.error("No transfer_id found in response:", response)
-          throw new Error("Server did not return a transaction ID. Please try again.")
-        }
+        if (!transferId) throw new Error("Server did not return a transaction ID.")
 
         setTransactionId(Number(transferId))
         setStep("processing")
@@ -237,21 +219,16 @@ export function QuickActionModal({
         return
       }
 
-      // === NON-DEPOSIT ACTIONS (Withdraw, Transfer, Paybill) ===
-      let res: any
-
+      // Withdraw, Transfer, Paybill
       if (actionType === "withdraw") {
-        res = await api.payments.withdraw(accId, amt, phoneNumber, description)
+        await api.payments.withdraw(accId, amt, phoneNumber, description)
       } else if (actionType === "transfer") {
-        res = await api.payments.transfer?.(accId, recipient, amt, description)
+        await api.payments.transfer?.(accId, recipient, amt, description)
       } else if (actionType === "paybill" || actionType === "bills") {
-        res = await api.payments.paybill?.(accId, paybillNumber, amt, description)
+        await api.payments.paybill?.(accId, paybillNumber, amt, description)
       }
 
-      // Add small delay for better UX on instant actions (especially withdrawal)
-      await new Promise(resolve => setTimeout(resolve, 1200)) // 1.2 seconds delay
-
-      // Success
+      await new Promise(resolve => setTimeout(resolve, 1200))
       setStep("success")
       toast({ title: "Success", description: config.successMessage })
       refreshUser?.()
@@ -264,53 +241,42 @@ export function QuickActionModal({
         err.message ||
         "Operation failed. Please try again."
 
-      console.error("Action failed:", err)
       setErrorMessage(msg)
       setStep("error")
-
-      toast({ 
-        variant: "destructive", 
-        title: "Failed", 
-        description: msg 
-      })
+      toast({ variant: "destructive", title: "Failed", description: msg })
     } finally {
       setIsProcessing(false)
     }
   }
 
-  // Animation Variants
-  const modalVariants = {
-    hidden: { opacity: 0, scale: 0.95, y: 20 },
-    visible: { opacity: 1, scale: 1, y: 0, transition: { duration: 0.3, ease: "easeOut" } },
-    exit: { opacity: 0, scale: 0.95, y: 20, transition: { duration: 0.2 } }
-  }
-
-  const contentVariants = {
-    enter: { opacity: 0, x: -20 },
-    center: { opacity: 1, x: 0 },
-    exit: { opacity: 0, x: 20 }
-  }
-
   if (!isOpen) return null
 
   return (
-    <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4">
+    <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4 sm:p-6 overflow-y-auto">
       <motion.div
-        variants={modalVariants}
-        initial="hidden"
-        animate="visible"
-        exit="exit"
+        initial={{ opacity: 0, scale: 0.95, y: 30 }}
+        animate={{ opacity: 1, scale: 1, y: 0 }}
+        exit={{ opacity: 0, scale: 0.95, y: 30 }}
+        transition={{ duration: 0.3, ease: "easeOut" }}
+        className="w-full max-w-sm sm:max-w-md mx-auto my-auto"
       >
-        <LiquidGlassCard className="w-full max-w-md overflow-hidden" glow onClick={(e) => e.stopPropagation()}>
+        <LiquidGlassCard 
+          className="w-full overflow-hidden shadow-2xl" 
+          glow 
+          onClick={(e) => e.stopPropagation()}
+        >
           {/* Header */}
-          <div className="flex items-center justify-between p-6 border-b border-white/10">
+          <div className="flex items-center justify-between px-5 py-4 sm:px-6 sm:py-5 border-b border-white/10">
             <div className="flex items-center gap-3">
-              <div className={cn("w-11 h-11 rounded-2xl flex items-center justify-center", config.bgColor)}>
-                <Icon className={cn("h-6 w-6", config.color)} />
+              <div className={cn("w-9 h-9 sm:w-10 sm:h-10 rounded-2xl flex items-center justify-center flex-shrink-0", config.bgColor)}>
+                <Icon className={cn("h-5 w-5", config.color)} />
               </div>
-              <h2 className="text-2xl font-semibold text-foreground">{config.title}</h2>
+              <h2 className="text-xl sm:text-2xl font-semibold text-foreground tracking-tight">{config.title}</h2>
             </div>
-            <button onClick={handleClose} className="p-2 hover:bg-white/10 rounded-xl transition-colors">
+            <button 
+              onClick={handleClose} 
+              className="p-2 hover:bg-white/10 rounded-xl transition-all active:bg-white/20"
+            >
               <X className="h-5 w-5 text-muted-foreground" />
             </button>
           </div>
@@ -319,20 +285,19 @@ export function QuickActionModal({
             {/* SUCCESS */}
             {step === "success" && (
               <motion.div 
-                key="success" 
-                variants={contentVariants} 
-                initial="enter" 
-                animate="center" 
-                exit="exit" 
-                className="p-8 text-center"
+                key="success"
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: 10 }}
+                className="p-8 sm:p-10 text-center"
               >
                 <motion.div
                   initial={{ scale: 0 }}
                   animate={{ scale: 1 }}
-                  transition={{ type: "spring", stiffness: 200, damping: 15 }}
-                  className="mx-auto w-24 h-24 rounded-full bg-spartan-success/20 flex items-center justify-center mb-6"
+                  transition={{ type: "spring", stiffness: 300, damping: 20 }}
+                  className="mx-auto w-20 h-20 rounded-full bg-spartan-success/20 flex items-center justify-center mb-6"
                 >
-                  <CheckCircle className="h-16 w-16 text-spartan-success" />
+                  <CheckCircle className="h-14 w-14 text-spartan-success" />
                 </motion.div>
                 <h3 className="text-2xl font-semibold mb-2">Transaction Successful!</h3>
                 <p className="text-muted-foreground mb-8">{config.successMessage}</p>
@@ -342,7 +307,7 @@ export function QuickActionModal({
                     handleClose()
                     onSuccess?.()
                   }} 
-                  className="w-full"
+                  className="w-full py-6 text-base font-medium"
                 >
                   Done
                 </LiquidGlassButton>
@@ -351,41 +316,64 @@ export function QuickActionModal({
 
             {/* ERROR */}
             {step === "error" && (
-              <motion.div key="error" variants={contentVariants} initial="enter" animate="center" exit="exit" className="p-8 text-center">
-                <div className="mx-auto w-24 h-24 rounded-full bg-red-500/20 flex items-center justify-center mb-6">
-                  <AlertCircle className="h-16 w-16 text-red-400" />
+              <motion.div 
+                key="error"
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: 10 }}
+                className="p-8 sm:p-10 text-center"
+              >
+                <div className="mx-auto w-20 h-20 rounded-full bg-red-500/20 flex items-center justify-center mb-6">
+                  <AlertCircle className="h-14 w-14 text-red-400" />
                 </div>
-                <h3 className="text-xl font-semibold mb-2 text-red-400">Transaction Failed</h3>
-                <p className="text-red-400 mb-8">{errorMessage}</p>
-                <LiquidGlassButton variant="primary" onClick={() => setStep("form")} className="w-full">Try Again</LiquidGlassButton>
+                <h3 className="text-xl font-semibold mb-3 text-red-400">Transaction Failed</h3>
+                <p className="text-red-400 mb-8 text-sm leading-relaxed px-4">{errorMessage}</p>
+                <LiquidGlassButton 
+                  onClick={() => setStep("form")} 
+                  className="w-full py-6 text-base"
+                >
+                  Try Again
+                </LiquidGlassButton>
               </motion.div>
             )}
 
-            {/* PROCESSING - Now used for both Deposit and Withdrawal */}
+            {/* PROCESSING */}
             {(step === "processing" || isProcessing) && (
-              <motion.div key="processing" variants={contentVariants} initial="enter" animate="center" exit="exit" className="p-12 text-center">
+              <motion.div 
+                key="processing"
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                className="p-12 sm:p-16 text-center min-h-[280px] flex flex-col items-center justify-center"
+              >
                 <Loader2 className="mx-auto h-16 w-16 animate-spin text-spartan-cyan mb-6" />
                 <h3 className="text-xl font-semibold mb-3">
-                  {actionType === "deposit" ? "Waiting for M-Pesa Payment" : "Processing Withdrawal"}
+                  {actionType === "deposit" ? "Waiting for M-Pesa Payment" : "Processing..."}
                 </h3>
-                <p className="text-muted-foreground mb-2">
+                <p className="text-muted-foreground text-center max-w-[260px]">
                   {actionType === "deposit" 
-                    ? "Check your phone for the prompt" 
+                    ? "Check your phone for the STK push prompt" 
                     : "Please wait while we process your request..."}
                 </p>
-                {actionType === "withdraw" && (
-                  <p className="text-sm text-muted-foreground">This usually takes a few seconds</p>
-                )}
               </motion.div>
             )}
 
             {/* CONFIRMATION */}
             {step === "confirm" && (
-              <motion.div key="confirm" variants={contentVariants} initial="enter" animate="center" exit="exit" className="p-6">
-                <div className="text-center py-6">
-                  <h3 className="text-xl font-semibold mb-6">Confirm Transaction</h3>
-                  <div className="bg-white/5 rounded-2xl p-6 mb-8">
-                    <p className="text-4xl font-bold text-foreground mb-1">KES {Number(amount).toLocaleString("en-KE")}</p>
+              <motion.div 
+                key="confirm"
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                className="p-6 sm:p-8"
+              >
+                <div className="text-center py-8">
+                  <h3 className="text-2xl font-semibold mb-6">Confirm Transaction</h3>
+                  
+                  <div className="bg-white/5 rounded-3xl p-7 mb-8">
+                    <p className="text-5xl font-bold text-foreground tracking-tighter mb-1">
+                      KES {Number(amount).toLocaleString("en-KE")}
+                    </p>
                     <p className="text-sm text-muted-foreground">
                       {actionType === "deposit" && "via M-Pesa STK Push"}
                       {actionType === "withdraw" && "to M-Pesa"}
@@ -393,9 +381,19 @@ export function QuickActionModal({
                     </p>
                   </div>
 
-                  <div className="flex gap-4">
-                    <LiquidGlassButton variant="secondary" onClick={() => setStep("form")} className="flex-1">Back</LiquidGlassButton>
-                    <LiquidGlassButton onClick={handleFinalSubmit} disabled={isProcessing} className="flex-1">
+                  <div className="flex flex-col sm:flex-row gap-4">
+                    <LiquidGlassButton 
+                      variant="secondary" 
+                      onClick={() => setStep("form")} 
+                      className="flex-1 py-6 text-base"
+                    >
+                      Back
+                    </LiquidGlassButton>
+                    <LiquidGlassButton 
+                      onClick={handleFinalSubmit} 
+                      disabled={isProcessing} 
+                      className="flex-1 py-6 text-base font-medium"
+                    >
                       {isProcessing ? (
                         <>
                           <Loader2 className="animate-spin mr-2 h-5 w-5" />
@@ -410,18 +408,16 @@ export function QuickActionModal({
               </motion.div>
             )}
 
-            {/* MAIN FORM */}
+            {/* MAIN FORM - Most Important Part */}
             {step === "form" && (
               <motion.form 
-                key="form" 
-                variants={contentVariants} 
-                initial="enter" 
-                animate="center" 
-                exit="exit" 
+                key="form"
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
                 onSubmit={handleConfirm} 
-                className="p-6 space-y-6"
+                className="p-5 sm:p-6 space-y-5 max-h-[68vh] overflow-y-auto pb-8"
               >
-                {/* ... same form content as before ... */}
                 <div>
                   <label className="text-sm font-medium block mb-2">{config.accountLabel}</label>
                   <LiquidGlassSelect 
@@ -474,20 +470,22 @@ export function QuickActionModal({
                     placeholder="0.00" 
                     value={amount} 
                     onChange={(e) => setAmount(e.target.value)} 
-                    min="1" 
+                    min="1"
+                    className="text-2xl py-4 font-medium"
                   />
 
-                  <div className="grid grid-cols-3 gap-2 mt-3">
+                  {/* Quick Amounts - Compact & Responsive */}
+                  <div className="grid grid-cols-3 gap-2 mt-4">
                     {quickAmounts.map((amt) => (
                       <button
                         key={amt}
                         type="button"
                         onClick={() => setAmount(amt.toString())}
                         className={cn(
-                          "py-2.5 text-sm font-medium rounded-xl transition-all border",
+                          "py-3 text-sm font-medium rounded-2xl border transition-all active:scale-95",
                           amount === amt.toString()
-                            ? "bg-spartan-cyan text-black border-spartan-cyan"
-                            : "hover:bg-white/10 border-white/10"
+                            ? "bg-spartan-cyan text-black border-spartan-cyan font-semibold"
+                            : "border-white/10 hover:bg-white/10"
                         )}
                       >
                         {amt.toLocaleString()}
@@ -505,13 +503,15 @@ export function QuickActionModal({
                   />
                 </div>
 
+                {/* Continue Button - Always accessible */}
                 <LiquidGlassButton 
                   type="submit" 
                   size="lg" 
-                  disabled={!selectedAccount || !amount} 
-                  className="w-full mt-4"
+                  disabled={!selectedAccount || !amount || Number(amount) <= 0}
+                  className="w-full py-7 text-base font-semibold mt-4 active:scale-[0.985] shadow-lg"
                 >
-                  Continue <Icon className="ml-2 h-5 w-5" />
+                  Continue 
+                  <Icon className="ml-2 h-5 w-5" />
                 </LiquidGlassButton>
               </motion.form>
             )}

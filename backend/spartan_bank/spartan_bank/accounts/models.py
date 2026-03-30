@@ -42,6 +42,17 @@ class UserProfile(models.Model):
     otp_created_at = models.DateTimeField(null=True, blank=True)
     is_verified = models.BooleanField(default=False)
 
+    # Biometric / Fingerprint Support
+    biometric_enabled = models.BooleanField(
+        default=False, 
+        help_text="User has enabled fingerprint or face ID login"
+    )
+    last_biometric_login = models.DateTimeField(
+        null=True, 
+        blank=True, 
+        help_text="Last successful biometric login timestamp"
+    )
+
     @property
     def otp_is_valid(self):
         if not self.otp_code or not self.otp_created_at:
@@ -66,6 +77,7 @@ class UserProfile(models.Model):
         return f"Profile of {self.user.email or self.user.username}"
 
     # ====================== DAILY LIMIT METHODS ======================
+
     def get_daily_used_deposits(self):
         Transfer = apps.get_model('payments', 'Transfer')
         today = timezone.now().date()
@@ -78,43 +90,46 @@ class UserProfile(models.Model):
         return total
 
     def get_remaining_daily_deposits(self):
-        return self.daily_deposit_limit - self.get_daily_used_deposits()
-
-    def get_daily_used_withdrawals(self):
-        Transfer = apps.get_model('payments', 'Transfer')
-        today = timezone.now().date()
-        total = Transfer.objects.filter(
-            sender_account__user=self.user,
-            transfer_type='withdraw_mpesa',
-            status__in=['completed', 'pending'],
-            initiated_at__date=today
-        ).aggregate(total=Sum('amount'))['total'] or Decimal('0.00')
-        return total
-
-    def get_daily_used_transfers(self):
-        Transfer = apps.get_model('payments', 'Transfer')
-        today = timezone.now().date()
-        total = Transfer.objects.filter(
-            sender_account__user=self.user,
-            transfer_type__in=['internal_same_user', 'internal_other_user'],
-            status='completed',
-            initiated_at__date=today
-        ).aggregate(total=Sum('amount'))['total'] or Decimal('0.00')
-        return total
+        return max(Decimal('0'), self.daily_deposit_limit - self.get_daily_used_deposits())
 
     def get_daily_used_outflows(self):
-        Transfer = apps.get_model('payments', 'Transfer')
+        """Total outflow today: withdrawals + internal transfers + bills + airtime"""
         today = timezone.now().date()
-        total = Transfer.objects.filter(
+        total = Decimal('0.00')
+
+        # 1. From Transfer model
+        Transfer = apps.get_model('payments', 'Transfer')
+        transfer_total = Transfer.objects.filter(
             sender_account__user=self.user,
-            transfer_type__in=[
-                'withdraw_mpesa', 'internal_other_user', 'external_mpesa',
-                'external_pesalink', 'bill_payment'
-            ],
-            status__in=['completed', 'pending'],
-            initiated_at__date=today
-        ).aggregate(total=Sum('amount'))['total'] or Decimal('0.00')
+            initiated_at__date=today,
+            status__in=['completed', 'mpesa_confirmed', 'pending']
+        ).aggregate(total=Sum('total_debited'))['total'] or Decimal('0.00')
+        total += transfer_total
+
+        # 2. From BillPayment (normal bills)
+        BillPayment = apps.get_model('bills', 'BillPayment')
+        bill_total = BillPayment.objects.filter(
+            user_account__user=self.user,
+            initiated_at__date=today,
+            status__in=['completed', 'processing']
+        ).aggregate(total=Sum('total_debited'))['total'] or Decimal('0.00')
+        total += bill_total
+
+        # 3. From AirtimeTopup
+        AirtimeTopup = apps.get_model('bills', 'AirtimeTopup')
+        airtime_total = AirtimeTopup.objects.filter(
+            user_account__user=self.user,
+            initiated_at__date=today,
+            status__in=['completed', 'processing']
+        ).aggregate(total=Sum('total_debited'))['total'] or Decimal('0.00')
+        total += airtime_total
+
         return total
+
+    def get_remaining_daily_outflows(self):
+        """Remaining daily outflow limit"""
+        used = self.get_daily_used_outflows()
+        return max(Decimal('0'), getattr(self, 'daily_outflow_limit', Decimal('0')) - used)
 
 
 # Signal to auto-create profile
@@ -155,14 +170,13 @@ class Account(models.Model):
             return None
 
         try:
-            # Fix for "token must be bytes or str" error
             token = encrypted_field
             if isinstance(token, (memoryview, bytearray)):
                 token = bytes(token)
             elif isinstance(token, str):
                 token = token.encode('utf-8')
             elif not isinstance(token, bytes):
-                token = bytes(token)  # last resort
+                token = bytes(token)
 
             return FERNET.decrypt(token).decode('utf-8')
         except InvalidToken:
@@ -220,7 +234,6 @@ class Account(models.Model):
             return "decryption-error"
 
     def save(self, *args, **kwargs):
-        # Auto-generate encrypted account number if missing
         if not self.account_number_encrypted and self.user_id:
             try:
                 ts = int(timezone.now().timestamp())
@@ -301,12 +314,25 @@ class Transaction(models.Model):
 
 
 class TrustedDevice(models.Model):
-    """Tracks trusted devices for security"""
+    """Tracks trusted devices for security (including biometric/fingerprint)"""
     user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='trusted_devices')
     token = models.CharField(max_length=128, unique=True)
     user_agent = models.TextField(blank=True)
     ip_address = models.GenericIPAddressField(null=True, blank=True)
     device_name = models.CharField(max_length=100, blank=True)
+    
+    # Biometric fields
+    is_biometric = models.BooleanField(default=False, help_text="This device was registered using fingerprint/face ID")
+    biometric_type = models.CharField(
+        max_length=20,
+        choices=[
+            ('fingerprint', 'Fingerprint'),
+            ('face_id', 'Face ID'),
+            ('other', 'Other Biometric')
+        ],
+        default='fingerprint'
+    )
+    
     last_used = models.DateTimeField(auto_now=True)
     created_at = models.DateTimeField(auto_now_add=True)
 
@@ -314,7 +340,8 @@ class TrustedDevice(models.Model):
         unique_together = ('user', 'token')
 
     def __str__(self):
-        return f"{self.user} – {self.device_name or 'Unknown device'} ({self.last_used.date()})"
+        bio = f" ({self.get_biometric_type_display()})" if self.is_biometric else ""
+        return f"{self.user} – {self.device_name or 'Unknown device'}{bio} ({self.last_used.date()})"
 
 
 class LoanSchedule(models.Model):

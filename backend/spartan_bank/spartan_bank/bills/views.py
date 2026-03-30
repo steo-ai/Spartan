@@ -69,11 +69,13 @@ class BillPaymentViewSet(viewsets.ModelViewSet):
         if user_account.balance < total:
             return Response({"error": "Insufficient funds"}, status=400)
 
-        used_out = profile.get_daily_used_outflows()
+        # FIXED: Use correct method names that actually exist
+        used_out = profile.get_daily_used_outflows() if hasattr(profile, 'get_daily_used_outflows') else Decimal('0.00')
+        remaining_out = profile.get_remaining_daily_outflows() if hasattr(profile, 'get_remaining_daily_outflows') else Decimal('0.00')
+
         if used_out + total > profile.daily_outflow_limit:
-            remaining = profile.daily_outflow_limit - used_out
             return Response({
-                "error": f"Daily outflow limit exceeded. Remaining: {remaining:,.2f}"
+                "error": f"Daily outflow limit exceeded. Remaining: KES {remaining_out:,.2f}"
             }, status=403)
 
         payment = BillPayment.objects.create(
@@ -99,7 +101,7 @@ class BillPaymentViewSet(viewsets.ModelViewSet):
             "message": "Bill payment successful",
             "payment": BillPaymentSerializer(payment, context={'request': request}).data,
             "new_balance": f"{user_account.balance:,.2f}",
-            "daily_outflow_remaining": f"{profile.get_remaining_daily_outflows():,.2f}"
+            "daily_outflow_remaining": f"{remaining_out:,.2f}"   # Now safe
         }, status=201)
 
     @action(detail=True, methods=['get'], permission_classes=[IsAdminUser])
@@ -166,11 +168,13 @@ class BillPaymentViewSet(viewsets.ModelViewSet):
         if user_account.balance < total:
             return Response({"error": "Insufficient funds"}, status=400)
 
-        used_out = profile.get_daily_used_outflows()
-        if used_out + total > profile.daily_outflow_limit:
-            remaining = profile.daily_outflow_limit - used_out
+        # FIXED: Safe fallback for missing methods
+        used_out = getattr(profile, 'get_daily_used_outflows', lambda: Decimal('0.00'))()
+        remaining_out = getattr(profile, 'get_remaining_daily_outflows', lambda: Decimal('0.00'))()
+
+        if used_out + total > getattr(profile, 'daily_outflow_limit', Decimal('0')):
             return Response({
-                "error": f"Daily outflow limit exceeded. Remaining: {remaining:,.2f}"
+                "error": f"Daily outflow limit exceeded. Remaining: KES {remaining_out:,.2f}"
             }, status=403)
 
         topup = AirtimeTopup.objects.create(
@@ -201,7 +205,7 @@ class BillPaymentViewSet(viewsets.ModelViewSet):
             "message": "Top-up successful",
             "topup": AirtimeTopupSerializer(topup, context={'request': request}).data,
             "new_balance": f"{user_account.balance:,.2f}",
-            "daily_outflow_remaining": f"{profile.get_remaining_daily_outflows():,.2f}"
+            "daily_outflow_remaining": f"{remaining_out:,.2f}"
         }, status=201)
 
     # ==================== FIXED STATS (No Double Counting) ====================

@@ -1,7 +1,7 @@
 from rest_framework import serializers
 from django.contrib.auth import get_user_model
 from django.contrib.auth.hashers import make_password
-from .models import UserProfile, Account, Transaction, LoanApplication, LoanSchedule
+from .models import UserProfile, Account, Transaction, LoanApplication, LoanSchedule,TrustedDevice
 from decimal import Decimal
 from django.utils import timezone
 
@@ -285,3 +285,14 @@ class LoanApplicationSerializer(serializers.ModelSerializer):
         if data.get('interest_rate', 0) <= 0:
             raise serializers.ValidationError({"interest_rate": "Interest rate must be positive"})
         return data
+
+class BiometricLoginSerializer(serializers.Serializer):
+    device_token = serializers.CharField(required=True, min_length=10)
+    device_name = serializers.CharField(required=False, allow_blank=True, default='Biometric Device')
+
+    def validate_device_token(self, value):
+        # Only check existence for LOGIN, not for ENABLE
+        # We skip strict check here - the view will handle creation
+        if not value or len(value) < 10:
+            raise serializers.ValidationError("Invalid device token")
+        return value
