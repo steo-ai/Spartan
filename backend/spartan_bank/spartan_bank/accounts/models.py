@@ -467,8 +467,11 @@ class LoanApplication(models.Model):
         if disbursed_amount is None:
             disbursed_amount = self.amount_requested
 
+        logger.info(f"🚀 Starting loan approval for Loan #{self.id} - Amount: {disbursed_amount}")
+
         try:
             with db_transaction.atomic():
+                logger.info("   1. Creating loan liability account...")
                 loan_account = Account.objects.create(
                     user=self.account.user,
                     account_type='loan',
@@ -477,6 +480,7 @@ class LoanApplication(models.Model):
                 loan_account.balance = -disbursed_amount
                 loan_account.save()
 
+                logger.info("   2. Updating loan application status...")
                 self.loan_account = loan_account
                 self.status = 'approved'
                 self.approved_at = timezone.now()
@@ -486,42 +490,43 @@ class LoanApplication(models.Model):
 
                 self.generate_amortization_schedule()
 
-                from django.apps import apps
-                Transfer = apps.get_model('payments', 'Transfer')
+                # ====================== CREATE PENDING TRANSFER ======================
+                logger.info("   3. Creating pending Transfer in payments app...")
+                from payments.models import Transfer
 
                 transfer = Transfer.objects.create(
                     sender_account=self.account,
+                    receiver_account=None,
                     amount=disbursed_amount,
                     fee=Decimal('0.00'),
                     total_debited=disbursed_amount,
                     transfer_type='loan_disbursement',
-                    description=f"Disbursement for Loan #{self.id}",
+                    description=f"Disbursement for Loan Application #{self.id}",
                     status='pending'
                 )
 
                 self.disbursement_transfer = transfer
                 self.save()
 
-                logger.info(f"✅ SUCCESS: Loan #{self.id} approved successfully!")
+                logger.info(f"✅ SUCCESS: Pending Transfer #{transfer.id} created (loan_disbursement)")
 
+                # Send notification
                 self.send_loan_email(
                     subject='Spartan Bank – Loan Approved – Awaiting Disbursement',
                     message=f'Your loan of KES {disbursed_amount:,.2f} has been approved.\n'
-                            f'Loan ID: #{self.id}\n'
-                            f'Final disbursement is pending admin confirmation.'
+                            f'Loan ID: #{self.id}\nFinal disbursement is pending admin confirmation.'
                 )
 
                 from notifications.signals import send_loan_notification
                 send_loan_notification(self, "approved")
 
-            return True
+                logger.info(f"✅ Loan #{self.id} fully approved and pending transfer created.")
+                return True
 
         except Exception as e:
-            logger.error(f"❌ FAILED to approve Loan #{self.id}: {e}")
-            import traceback
-            traceback.print_exc()
+            logger.error(f"❌ FAILED to approve Loan #{self.id}: {e}", exc_info=True)
             return False
-
+        
     @property
     def remaining_balance(self):
         if not self.amount_disbursed:

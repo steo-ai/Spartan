@@ -422,11 +422,18 @@ class AccountViewSet(viewsets.ModelViewSet):
                 status=status.HTTP_400_BAD_REQUEST
             )
 
-        if self.get_queryset().filter(account_type=account_type).exists():
+        # ====================== NEW LIMIT CHECK ======================
+        MAX_ACCOUNTS_PER_TYPE = 3
+        current_count = self.get_queryset().filter(account_type=account_type).count()
+
+        if current_count >= MAX_ACCOUNTS_PER_TYPE:
             return Response(
-                {"detail": f"You already have a {account_type} account"},
+                {
+                    "detail": f"You can only have up to {MAX_ACCOUNTS_PER_TYPE} {account_type} accounts."
+                },
                 status=status.HTTP_400_BAD_REQUEST
             )
+        # ============================================================
 
         try:
             with db_transaction.atomic():
@@ -462,7 +469,7 @@ Account Details:
 • Status: Active
 • Date Created: {new_account.created_at.strftime('%Y-%m-%d %H:%M')}
 
-You can now start using your new account for deposits, transfers, and other banking services.
+You can now start using your new account.
 
 Thank you for choosing Spartan Bank.
 
@@ -483,7 +490,8 @@ Spartan Bank Team
         except Exception as exc:
             print("Account creation error:", str(exc))
             return Response({"detail": f"Failed to create account: {str(exc)}"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
-        
+
+
     # Mini-statement, export-csv, export-pdf, and deprecated actions remain unchanged
     @action(detail=True, methods=['get'], url_path='mini-statement')
     def mini_statement(self, request, pk=None):

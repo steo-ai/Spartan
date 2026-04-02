@@ -29,6 +29,16 @@ const transferTypes = [
   { id: "pesalink", label: "To Other Bank", icon: Building2, description: "Send via Pesalink to other banks" },
 ];
 
+const bankOptions = [
+  { value: "kcb", label: "KCB Bank" },
+  { value: "equity", label: "Equity Bank" },
+  { value: "coop", label: "Co-operative Bank" },
+  { value: "absa", label: "ABSA Bank" },
+  { value: "stanbic", label: "Stanbic Bank" },
+  { value: "dtb", label: "DTB Bank" },
+  { value: "ncba", label: "NCBA Bank" },
+];
+
 export default function TransfersPage() {
   const { accounts, refreshData } = useAuth();
 
@@ -51,7 +61,6 @@ export default function TransfersPage() {
     bank: "",
   });
 
-  // Safe accounts handling
   const safeAccounts = Array.isArray(accounts) ? accounts : [];
   const hasAccounts = safeAccounts.length > 0;
 
@@ -59,16 +68,6 @@ export default function TransfersPage() {
     value: acc.id?.toString() || "",
     label: `${(acc.account_type || "Account").charAt(0).toUpperCase() + (acc.account_type || "").slice(1)} ••••${acc.account_number?.slice(-6) || "••••••"} (KES ${(acc.balance || 0).toLocaleString()})`,
   }));
-
-  const bankOptions = [
-    { value: "kcb", label: "KCB Bank" },
-    { value: "equity", label: "Equity Bank" },
-    { value: "coop", label: "Co-operative Bank" },
-    { value: "absa", label: "ABSA Bank" },
-    { value: "stanbic", label: "Stanbic Bank" },
-    { value: "dtb", label: "DTB Bank" },
-    { value: "ncba", label: "NCBA Bank" },
-  ];
 
   const updateField = (field: string, value: string) => {
     setFormData((prev) => ({ ...prev, [field]: value }));
@@ -90,7 +89,6 @@ export default function TransfersPage() {
     return 0;
   };
 
-  // Fetch supporting data
   const fetchFrequentRecipients = async () => {
     try {
       setLoadingFrequent(true);
@@ -121,7 +119,6 @@ export default function TransfersPage() {
     }
   };
 
-  // Load data when accounts are ready
   useEffect(() => {
     if (hasAccounts) {
       fetchFrequentRecipients();
@@ -142,19 +139,54 @@ export default function TransfersPage() {
 
     try {
       const fromId = Number(formData.fromAccount);
-      const amt = Number(formData.amount);
+      const amount = Number(formData.amount);
 
+      if (!fromId || amount <= 0) {
+        throw new Error("Please select a valid account and amount");
+      }
+
+      const description = formData.description || `${selectedType} transfer`;
+
+      // Build correct payload for backend
       if (selectedType === "internal") {
         if (!formData.toAccount) throw new Error("Please select destination account");
-        await api.payments.internalTransfer(fromId, Number(formData.toAccount), amt, formData.description);
-      } else if (selectedType === "mpesa") {
-        if (!formData.recipient) throw new Error("Please enter M-Pesa phone number");
-        await api.payments.withdraw(fromId, amt, formData.recipient, formData.description);
+
+        const payload = {
+          from_account: fromId,
+          to_account: Number(formData.toAccount),
+          amount: amount,
+          description: description,
+        };
+
+        await api.payments.internalTransfer(payload);
+
       } else if (selectedType === "spartan") {
         if (!formData.recipient) throw new Error("Please enter recipient account number");
-        await api.payments.internalTransfer(fromId, Number(formData.recipient), amt, formData.description);
+
+        const payload = {
+          from_account: fromId,
+          to_account: formData.recipient,   // can be account number or ID
+          amount: amount,
+          description: description,
+        };
+
+        await api.payments.internalTransfer(payload);
+
+      } else if (selectedType === "mpesa") {
+        if (!formData.recipient) throw new Error("Please enter M-Pesa phone number");
+
+        const payload = {
+          account: fromId,
+          phone_number: formData.recipient.replace(/\s+/g, ""),
+          amount: amount,
+          description: description,
+        };
+
+        await api.payments.withdraw(payload);
+
       } else if (selectedType === "pesalink") {
         toast.error("Pesalink support coming soon");
+        setIsProcessing(false);
         return;
       }
 
@@ -163,15 +195,21 @@ export default function TransfersPage() {
 
       // Refresh data
       setTimeout(() => {
+        if (refreshData) refreshData();
         fetchFrequentRecipients();
         fetchRecentTransfers();
       }, 1500);
 
     } catch (err: any) {
-      const errorMsg = err?.response?.data?.detail || 
-                      err?.response?.data?.error || 
-                      err.message || 
-                      "Transfer failed. Please try again.";
+      console.error("Full transfer error:", err?.response?.data || err);
+
+      const errorMsg = 
+        err?.response?.data?.detail ||
+        err?.response?.data?.error ||
+        err?.response?.data?.message ||
+        err.message ||
+        "Transfer failed. Please try again.";
+
       toast.error(errorMsg);
     } finally {
       setIsProcessing(false);
@@ -191,7 +229,6 @@ export default function TransfersPage() {
     setIsSuccess(false);
   };
 
-  // No accounts state
   if (!hasAccounts) {
     return (
       <div className="flex flex-col items-center justify-center min-h-[60vh] text-center px-6">

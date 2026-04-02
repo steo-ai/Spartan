@@ -1,8 +1,9 @@
+# payments/views.py
 from decimal import Decimal, InvalidOperation
 from django.db.models import Count
 from rest_framework import viewsets, status
 from rest_framework.decorators import action
-from rest_framework.permissions import IsAuthenticated, AllowAny, IsAdminUser
+from rest_framework.permissions import IsAuthenticated, IsAdminUser, AllowAny   # ← FIXED: Added AllowAny
 from rest_framework.response import Response
 from django.db import transaction as db_transaction
 from django.utils import timezone
@@ -13,6 +14,7 @@ from .models import Transfer, MpesaTransaction
 from .serializers import TransferSerializer
 from .payment_client import PaymentClient
 from accounts.models import Account, Transaction, UserProfile
+
 
 
 class PaymentViewSet(viewsets.GenericViewSet):
@@ -53,7 +55,6 @@ class PaymentViewSet(viewsets.GenericViewSet):
             remaining = profile.get_remaining_daily_deposits()
             return Response({"error": f"Daily deposit limit exceeded. Remaining: KES {remaining:,.2f}"}, status=403)
 
-        # Create Transfer record first
         transfer = Transfer.objects.create(
             sender_account=account,
             amount=amount,
@@ -80,14 +81,12 @@ class PaymentViewSet(viewsets.GenericViewSet):
                 "response": stk_response
             }, status=400)
 
-        # Create MpesaTransaction record
         MpesaTransaction.objects.create(
             transfer=transfer,
             checkout_request_id=stk_response.get('CheckoutRequestID'),
             merchant_request_id=stk_response.get('MerchantRequestID', '')
         )
 
-        # Improved response for frontend
         return Response({
             "success": True,
             "message": "M-Pesa prompt sent. Complete payment on your phone.",
@@ -145,7 +144,7 @@ class PaymentViewSet(viewsets.GenericViewSet):
             "status": "pending"
         }, status=201)
 
-    # ====================== M-PESA WITHDRAWAL ======================
+    # ====================== M-PESA WITHDRAWAL - FIXED ======================
     @db_transaction.atomic
     @action(detail=False, methods=['post'])
     def withdraw(self, request):
@@ -154,28 +153,37 @@ class PaymentViewSet(viewsets.GenericViewSet):
         amount_str = request.data.get('amount')
         phone = request.data.get('phone_number')
         description = request.data.get('description', 'M-Pesa Withdrawal')
-    
+
         try:
             amount = Decimal(amount_str)
             account = Account.objects.get(id=account_id, user=request.user, is_active=True)
         except (InvalidOperation, Account.DoesNotExist, TypeError):
             return Response({"error": "Invalid amount or account"}, status=400)
-    
+
         if amount <= 0 or amount > self.MAX_SINGLE:
             return Response({"error": f"Amount must be between 1 and {self.MAX_SINGLE:,.2f} KES"}, status=400)
-    
+
         if amount > account.balance:
             return Response({"error": "Insufficient funds"}, status=400)
-    
+
         profile = self._get_profile()
-        used = profile.get_daily_used_withdrawals()
-        if used + amount > profile.daily_withdrawal_limit:
-            return Response({"error": "Daily withdrawal limit exceeded"}, status=403)
-    
+
+        # Correct daily limit checks
+        remaining_outflow = profile.get_remaining_daily_outflows()
+        if amount > remaining_outflow:
+            return Response({
+                "error": f"Daily outflow limit exceeded. Remaining: KES {remaining_outflow:,.2f}"
+            }, status=403)
+
+        if amount > profile.daily_withdrawal_limit:
+            return Response({
+                "error": f"Amount exceeds your daily withdrawal limit of KES {profile.daily_withdrawal_limit:,.2f}"
+            }, status=403)
+
         with db_transaction.atomic():
             account.balance -= amount
             account.save()
-    
+
             transfer = Transfer.objects.create(
                 sender_account=account,
                 amount=amount,
@@ -186,7 +194,7 @@ class PaymentViewSet(viewsets.GenericViewSet):
                 phone_number=phone,
                 status='pending'
             )
-    
+
             Transaction.objects.create(
                 account=account,
                 amount=-amount,
@@ -195,7 +203,7 @@ class PaymentViewSet(viewsets.GenericViewSet):
                 balance_after=account.balance,
                 category='withdrawal'
             )
-    
+
         return Response({
             "success": True,
             "message": "Withdrawal request submitted. Funds deducted. Awaiting admin approval.",
@@ -204,88 +212,121 @@ class PaymentViewSet(viewsets.GenericViewSet):
         }, status=202)
 
     # ====================== INTERNAL TRANSFER ======================
-    @db_transaction.atomic
     @action(detail=False, methods=['post'], url_path='internal_transfer')
+    @db_transaction.atomic
     def internal_transfer(self, request):
-        """Transfer money between two Spartan accounts"""
+        """Transfer money between two Spartan accounts (same user or different users)"""
+        
         from_account_id = request.data.get('from_account')
         to_account_id = request.data.get('to_account')
         amount_str = request.data.get('amount')
         description = request.data.get('description', 'Internal Transfer')
     
-        try:
-            amount = Decimal(amount_str)
-            from_account = Account.objects.get(id=from_account_id, user=request.user, is_active=True)
-            to_account = Account.objects.get(id=to_account_id, is_active=True)
-        except (InvalidOperation, Account.DoesNotExist, TypeError):
-            return Response({"error": "Invalid amount or account(s)"}, status=400)
+        # ====================== VALIDATION ======================
+        if not from_account_id or not to_account_id or not amount_str:
+            return Response({
+                "error": "Missing required fields: from_account, to_account, and amount are required."
+            }, status=400)
     
-        if amount <= 0:
-            return Response({"error": "Amount must be greater than 0"}, status=400)
+        try:
+            amount = Decimal(str(amount_str).strip())
+        except (InvalidOperation, TypeError, ValueError):
+            return Response({"error": "Invalid amount format. Please provide a valid number."}, status=400)
+    
+        if amount <= Decimal('0.01'):
+            return Response({"error": "Amount must be greater than 0.01 KES"}, status=400)
+    
+        # Fetch accounts with proper validation
+        try:
+            from_account = Account.objects.get(
+                id=from_account_id, 
+                user=request.user, 
+                is_active=True
+            )
+        except Account.DoesNotExist:
+            return Response({"error": "Source account not found or you don't have access to it"}, status=400)
+    
+        try:
+            to_account = Account.objects.get(id=to_account_id, is_active=True)
+        except Account.DoesNotExist:
+            return Response({"error": "Destination account not found"}, status=400)
     
         if from_account.id == to_account.id:
             return Response({"error": "Cannot transfer to the same account"}, status=400)
     
         if amount > from_account.balance:
-            return Response({"error": "Insufficient funds"}, status=400)
-    
-        profile = self._get_profile()
-        used_outflow = abs(profile.get_daily_used_outflows())
-        if used_outflow + amount > profile.daily_outflow_limit:
-            remaining = profile.daily_outflow_limit - used_outflow
             return Response({
-                "error": f"Daily outflow limit exceeded. Remaining: KES {remaining:,.2f}"
+                "error": f"Insufficient funds. Available balance: KES {from_account.balance:,.2f}"
+            }, status=400)
+    
+        # Daily limit check
+        profile = request.user.userprofile  # Better to use request.user directly
+        remaining_outflow = profile.get_remaining_daily_outflows()
+        
+        if amount > remaining_outflow:
+            return Response({
+                "error": f"Daily outflow limit exceeded. Remaining today: KES {remaining_outflow:,.2f}"
             }, status=403)
     
-        with db_transaction.atomic():
-            from_account.balance -= amount
-            from_account.save()
+        # ====================== PERFORM TRANSFER ======================
+        try:
+            with db_transaction.atomic():
+                # Update balances
+                from_account.balance -= amount
+                from_account.save()
     
-            to_account.balance += amount
-            to_account.save()
+                to_account.balance += amount
+                to_account.save()
     
-            Transaction.objects.create(
-                account=from_account,
-                related_account=to_account,
-                amount=-amount,
-                transaction_type='transfer_out',
-                description=description,
-                balance_after=from_account.balance,
-                category='transfer'
-            )
+                # Create transactions
+                Transaction.objects.create(
+                    account=from_account,
+                    related_account=to_account,
+                    amount=-amount,
+                    transaction_type='transfer_out',
+                    description=description,
+                    balance_after=from_account.balance,
+                    category='transfer'
+                )
     
-            Transaction.objects.create(
-                account=to_account,
-                related_account=from_account,
-                amount=amount,
-                transaction_type='transfer_in',
-                description=description,
-                balance_after=to_account.balance,
-                category='transfer'
-            )
+                Transaction.objects.create(
+                    account=to_account,
+                    related_account=from_account,
+                    amount=amount,
+                    transaction_type='transfer_in',
+                    description=description,
+                    balance_after=to_account.balance,
+                    category='transfer'
+                )
     
-            transfer = Transfer.objects.create(
-                sender_account=from_account,
-                receiver_account=to_account,
-                amount=amount,
-                fee=Decimal('0.00'),
-                total_debited=amount,
-                transfer_type='internal_other_user' if from_account.user != to_account.user else 'internal_same_user',
-                description=description,
-                status='completed',
-                completed_at=timezone.now()
-            )
+                # Create Transfer record
+                transfer = Transfer.objects.create(
+                    sender_account=from_account,
+                    receiver_account=to_account,
+                    amount=amount,
+                    fee=Decimal('0.00'),
+                    total_debited=amount,
+                    transfer_type='internal_same_user' if from_account.user == to_account.user else 'internal_other_user',
+                    description=description,
+                    status='completed',
+                    completed_at=timezone.now()
+                )
     
-        return Response({
-            "success": True,
-            "message": "Internal transfer completed successfully!",
-            "transfer_id": transfer.id,
-            "reference": transfer.reference,
-            "new_balance": f"{from_account.balance:,.2f} KES",
-            "from_account": from_account.account_number,
-            "to_account": to_account.account_number,
-            "amount": float(amount)
-        }, status=200)
+            # Success response
+            return Response({
+                "success": True,
+                "message": "Internal transfer completed successfully!",
+                "transfer_id": transfer.id,
+                "from_account": from_account.account_number,
+                "to_account": to_account.account_number,
+                "amount": float(amount),
+                "new_from_balance": float(from_account.balance),
+                "new_to_balance": float(to_account.balance),
+            }, status=200)
+    
+        except Exception as e:
+            logger.error(f"Internal transfer failed: {e}", exc_info=True)
+            return Response({"error": "Transfer failed due to a system error. Please try again."}, status=500)
 
     # ====================== DARAJA CALLBACK ======================
     @method_decorator(csrf_exempt)
@@ -339,11 +380,16 @@ class PaymentViewSet(viewsets.GenericViewSet):
         if transfer.status not in ['pending', 'mpesa_confirmed']:
             return Response({"error": f"Cannot approve this transfer. Current status: {transfer.status}"}, status=400)
 
-        # Loan Disbursement
-        if transfer.transfer_type == 'loan_disbursement':
-            loan = getattr(transfer, 'loan_disbursement', None)
-            if not loan:
-                return Response({"error": "No linked loan found for this disbursement"}, status=400)
+                # ====================== LOAN DISBURSEMENT ======================
+        elif transfer.transfer_type == 'loan_disbursement':
+            from accounts.models import LoanApplication
+
+            try:
+                loan = LoanApplication.objects.select_related('loan_account', 'account').get(
+                    disbursement_transfer=transfer
+                )
+            except LoanApplication.DoesNotExist:
+                return Response({"error": "No linked loan found for this disbursement transfer"}, status=400)
 
             try:
                 with db_transaction.atomic():
@@ -356,9 +402,9 @@ class PaymentViewSet(viewsets.GenericViewSet):
                         amount=transfer.amount,
                         transaction_type='loan_disbursement',
                         category='loan',
-                        description=transfer.description or f"Loan #{loan.id} disbursed",
+                        description=f"Loan #{loan.id} disbursed successfully (Ref: {transfer.reference})",
                         balance_after=account.balance,
-                        related_account=getattr(loan, 'loan_account', None),
+                        related_account=loan.loan_account,
                     )
 
                     loan.status = 'active'
@@ -369,17 +415,24 @@ class PaymentViewSet(viewsets.GenericViewSet):
                     transfer.completed_at = timezone.now()
                     transfer.save()
 
+                # Notification
+                from notifications.signals import send_loan_notification
+                send_loan_notification(loan, "approved")
+
                 return Response({
                     "message": "Loan disbursed successfully!",
                     "loan_id": loan.id,
                     "credited_account": account.account_number,
                     "amount": float(transfer.amount),
-                    "new_balance": float(account.balance)
+                    "new_balance": float(account.balance),
+                    "transfer_reference": transfer.reference
                 }, status=200)
 
             except Exception as e:
+                logger.error(f"Loan disbursement failed for transfer {transfer.id}: {e}", exc_info=True)
                 return Response({"error": f"Failed to disburse loan: {str(e)}"}, status=500)
-
+            
+            
         # Withdrawal
         elif transfer.transfer_type == 'withdraw_mpesa':
             with db_transaction.atomic():
@@ -467,7 +520,7 @@ class PaymentViewSet(viewsets.GenericViewSet):
             "count": len(recipients)
         })
 
-    # ====================== CHECK DEPOSIT STATUS (FIXED) ======================
+    # ====================== CHECK DEPOSIT STATUS ======================
     @action(detail=False, methods=['get'], url_path='check-deposit-status')
     def check_deposit_status(self, request):
         """Poll endpoint for frontend to check deposit status"""
