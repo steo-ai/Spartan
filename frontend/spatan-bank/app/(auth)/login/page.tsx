@@ -189,7 +189,7 @@ export default function LoginPage() {
         <SpartanLogoText className="mb-3" />
         <h1 className="text-2xl font-bold text-foreground">Welcome Back</h1>
         <p className="text-muted-foreground mt-1.5 text-center">
-          Sign in to continue to your Spartan account
+          Sign in to continue to your WellsWorth account
         </p>
       </div>
 

@@ -101,9 +101,9 @@ export function SpartanLogoText({ className }: { className?: string }) {
       <SpartanLogo className="h-12 w-12" />
       <div>
         <h1 className="text-2xl font-bold bg-gradient-to-r from-spartan-cyan to-spartan-purple bg-clip-text text-transparent">
-          Spartan Bank
+          Wellsworth Shop
         </h1>
-        <p className="text-xs text-muted-foreground tracking-widest uppercase">Digital Banking</p>
+        <p className="text-xs text-muted-foreground tracking-widest uppercase">Digital Shopping</p>
       </div>
     </div>
   )

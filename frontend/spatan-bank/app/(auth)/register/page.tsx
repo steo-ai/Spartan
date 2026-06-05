@@ -177,7 +177,7 @@ export default function RegisterPage() {
     <LiquidGlassCard className="w-full max-w-lg p-8 relative z-10">
       <div className="flex flex-col items-center mb-8">
         <SpartanLogoText className="mb-2" />
-        <h1 className="text-2xl font-bold text-foreground">Create Spartan Account</h1>
+        <h1 className="text-2xl font-bold text-foreground">Create WellsWorth Account</h1>
         <p className="text-muted-foreground mt-1">Step {step} of 3 • Takes 60 seconds</p>
       </div>
 

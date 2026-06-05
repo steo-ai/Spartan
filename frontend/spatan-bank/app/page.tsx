@@ -94,8 +94,8 @@ export default function SpartanBankLanding() {
           <img src="/images/spartan-logo-512.png" alt="Spartan Bank Logo" className="w-32 h-32 mx-auto drop-shadow-2xl" />
         </div>
 
-        <h1 className="text-6xl md:text-7xl font-bold tracking-tight mb-3">Spartan Bank</h1>
-        <p className="text-2xl md:text-3xl text-slate-300 mb-12 max-w-md">Secure Banking.<br />Instant Loans.</p>
+        <h1 className="text-6xl md:text-7xl font-bold tracking-tight mb-3">WellsWorth</h1>
+        <p className="text-2xl md:text-3xl text-slate-300 mb-12 max-w-md">Verified Advertisement Shop<br />Instant Loans.</p>
         <p className="text-lg text-slate-400 mb-16 max-w-sm">Choose your journey with confidence</p>
 
         <div className="w-full max-w-lg space-y-4 mb-12">
@@ -116,7 +116,7 @@ export default function SpartanBankLanding() {
             </div>
             <div className="flex-1 text-left">
               <div className="font-semibold text-xl">{installing ? "Installing..." : "Continue with Application"}</div>
-              <div className="text-blue-200 text-sm">Install Spartan Bank • Works Offline</div>
+              <div className="text-blue-200 text-sm">Install Wellsworth • Works Offline</div>
             </div>
             <ArrowRight className="text-blue-200 group-hover:translate-x-1 transition" />
           </button>
@@ -127,7 +127,7 @@ export default function SpartanBankLanding() {
               <Users className="w-8 h-8" />
             </div>
             <div className="flex-1 text-left">
-              <div className="font-semibold text-xl">About Spartan Bank</div>
+              <div className="font-semibold text-xl">About Wellsworth Shop</div>
               <div className="text-slate-400 text-sm">Learn more about us</div>
             </div>
             <ArrowRight className="text-slate-400 group-hover:translate-x-1 transition" />
@@ -138,10 +138,10 @@ export default function SpartanBankLanding() {
       {/* About Section */}
       <div id="about" className="relative z-10 bg-slate-900 py-20 px-6">
         <div className="max-w-3xl mx-auto text-center">
-          <h2 className="text-4xl font-bold mb-6">Why Choose Spartan Bank?</h2>
+          <h2 className="text-4xl font-bold mb-6">Why Choose Wellsworth Shop?</h2>
           <p className="text-slate-300 text-lg leading-relaxed">
-            We provide secure, fast, and reliable banking services with instant loans, 
-            smart savings tools, and seamless digital experience. Your money is safe with us.
+            We provide secure, fast, and reliable shopping services with instant loans, 
+            smart savings with best discounts, and seamless digital experience. Save your money with best discounts.
           </p>
         </div>
       </div>
